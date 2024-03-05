@@ -1,5 +1,7 @@
 """
-EfficientFormer_v2
+EfficientFormer_v2 copied and modified from https://github.com/snap-research/EfficientFormer/blob/main/models/efficientformer_v2.py.
+https://arxiv.org/abs/2206.01191
+
 """
 import os
 import copy
