@@ -178,7 +178,7 @@ class Attention2d(torch.nn.Module):
             return self.attention_bias_cache[device_key]
 
     def forward(self, x):
-        B, C, H, W = x.shape
+        B, C, H, W = x.shape  # pylint: disable=unused-variable
         if self.stride_conv is not None:
             x = self.stride_conv(x)
 
@@ -295,7 +295,7 @@ class Attention2dDownsample(torch.nn.Module):
             return self.attention_bias_cache[device_key]
 
     def forward(self, x):
-        B, C, H, W = x.shape
+        B, C, H, W = x.shape  # pylint: disable=unused-variable
 
         q = self.q(x).reshape(B, self.num_heads, -1, self.N2).permute(0, 1, 3, 2)
         k = self.k(x).reshape(B, self.num_heads, -1, self.N).permute(0, 1, 2, 3)
@@ -675,7 +675,7 @@ class EfficientFormerV2(nn.Module):
         return {k for k, _ in self.named_parameters() if "attention_biases" in k}
 
     @torch.jit.ignore
-    def group_matcher(self, coarse=False):
+    def group_matcher(self, coarse=False):  # pylint: disable=unused-argument
         matcher = dict(
             stem=r"^stem",  # stem and embed
             blocks=[(r"^stages\.(\d+)", None), (r"^norm", (99999,))],
