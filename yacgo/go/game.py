@@ -2,7 +2,7 @@ import numpy as np
 from scipy import ndimage
 from sklearn import preprocessing
 
-from go import state_utils, govars
+from yacgo.go import state_utils, govars
 
 """
 The state of the game is a numpy array
@@ -18,7 +18,6 @@ The state of the game is a numpy array
 5 - Game over
 """
 
-
 def init_state(size):
     # return initial board (numpy board)
     state = np.zeros((govars.NUM_CHNLS, size, size))
@@ -30,6 +29,13 @@ def batch_init_state(batch_size, board_size):
     batch_state = np.zeros((batch_size, govars.NUM_CHNLS, board_size, board_size))
     return batch_state
 
+def action_to_1d(state, action2d):
+    board_shape = state.shape[1:]
+    return action2d[0] * board_shape[0] + action2d[1]
+
+def action_to_2d(state, action1d):
+    board_shape = state.shape[1:]
+    return action1d // board_shape[0], action1d % board_shape[1]
 
 def next_state(state, action1d, canonical=False):
     # Deep copy the state to modify
