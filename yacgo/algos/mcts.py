@@ -16,7 +16,7 @@ class MCTSSearch:
         
     def sim(self):
         child = self.root.best_child(self.c_puct)
-        child.parent.backup(child.value)
+        child.parent.backup(-child.value)
 
     def run_sims(self, sims=400):
         self.sims_run += sims
@@ -38,6 +38,8 @@ class MCTSSearch:
         e = np.exp(scores)
         return e / np.sum(e)
 
+    def action_probs_nodes(self):
+        pass
 
 
 class MCTSNode:
@@ -52,7 +54,6 @@ class MCTSNode:
             self.value = game.winning(state, self.search.komi)
             self.terminal = True
         else:
-            # self.unexplored_moves = game.valid_moves(state)
             self.valid_moves = game.valid_moves(state)
             self.valid_move_count = sum(self.valid_moves)
             self.children: List[MCTSNode] = [None] * search.action_dim
@@ -73,7 +74,7 @@ class MCTSNode:
         if self.terminal:
             return self
  
-        puct = [c.value_score() * game.turn_pm(self.state) + c_puct * self.noisy_policy(i) * np.sqrt(self.total_visits) / (1 + self.child_visits[i]) 
+        puct = [-c.value_score() + c_puct * self.noisy_policy(i) * np.sqrt(self.total_visits) / (1 + self.child_visits[i]) 
             if c is not None else (0 if self.valid_moves[i] == 1 else -np.inf) for i, c in enumerate(self.children)]
 
         # print(puct)
@@ -89,4 +90,4 @@ class MCTSNode:
         self.value += value
         self.total_visits += 1
         if self.parent is not None:
-            self.parent.backup(value)
+            self.parent.backup(-value)
