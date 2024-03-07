@@ -22,6 +22,7 @@ Modifications and timm support by / Copyright 2023, Ross Wightman
 import math
 from functools import partial
 from typing import Dict
+import numpy as np
 
 import torch
 import torch.nn as nn
@@ -802,6 +803,11 @@ class EfficientFormerV2(nn.Module):
     def forward(self, x):
         x = self.forward_features(x)
         return self.forward_head(x)
+    
+    def forward_state(self, state):
+        # value, policy = self(torch.from_numpy(state).float().unsqueeze(0))
+        # return value.item(), policy.squeeze().detach().numpy()
+        return np.random.random(), np.random.random(26)
 
 
 def _cfg(url="", **kwargs):
