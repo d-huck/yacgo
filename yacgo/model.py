@@ -514,32 +514,6 @@ class Stem4(nn.Sequential):
         )
 
 
-# class Stem4(nn.Sequential):
-#     def __init__(self, in_chs, out_chs, act_layer=nn.GELU, norm_layer=nn.BatchNorm2d):
-#         super().__init__()
-#         self.stride = 4
-#         self.conv1 = ConvNormAct(
-#             in_chs,
-#             out_chs // 2,
-#             kernel_size=3,
-#             stride=2,
-#             padding=1,
-#             bias=True,
-#             norm_layer=norm_layer,
-#             act_layer=act_layer,
-#         )
-#         self.conv2 = ConvNormAct(
-#             out_chs // 2,
-#             out_chs,
-#             kernel_size=3,
-#             stride=2,
-#             padding=1,
-#             bias=True,
-#             norm_layer=norm_layer,
-#             act_layer=act_layer,
-#         )
-
-
 class EfficientFormerV2Stage(nn.Module):
 
     def __init__(
@@ -605,6 +579,49 @@ class EfficientFormerV2Stage(nn.Module):
         else:
             x = self.blocks(x)
         return x
+
+
+class PolicyHead(nn.Module):
+    def __init__(
+        self,
+        num_features,
+        num_actions,
+        drop_rate=0.0,
+        global_pool="avg",
+        distillation=True,
+    ):
+        super().__init__()
+        self.num_features = num_features
+        self.head_drop = nn.Dropout(drop_rate)
+        self.num_actions = num_actions
+        self.global_pool = global_pool
+        self.dist = distillation
+        self.head = (
+            nn.Linear(num_features, num_actions) if num_actions > 0 else nn.Identity()
+        )
+        self.head_dist = (
+            nn.Linear(num_features, num_actions)
+            if num_actions > 0 and distillation
+            else nn.Identity()
+        )
+
+        self.distilled_training = False
+
+    @torch.jit.ignore
+    def set_distilled_training(self, enable=True):
+        self.distilled_training = enable
+
+    def forward(self, x, pre_logits: bool = False):
+        if self.global_pool == "avg":
+            x = x.mean(dim=(2, 3))
+        x = self.head_drop(x)
+        if pre_logits:
+            return x
+        x, x_dist = self.head(x), self.head_dist(x)
+        if self.distilled_training and self.training and not torch.jit.is_scripting():
+            return x, x_dist
+        else:
+            return (x + x_dist) / 2
 
 
 class EfficientFormerV2(nn.Module):
@@ -683,22 +700,18 @@ class EfficientFormerV2(nn.Module):
             stages.append(stage)
         self.stages = nn.Sequential(*stages)
 
-        # Classifier head
+        # Policy head
+        self.dist = distillation
         self.num_features = embed_dims[-1]
         self.norm = norm_layer(embed_dims[-1])
-        self.head_drop = nn.Dropout(drop_rate)
-        self.head = (
-            nn.Linear(embed_dims[-1], num_classes) if num_classes > 0 else nn.Identity()
+
+        self.policy_head = PolicyHead(
+            embed_dims[-1],
+            num_classes,
+            drop_rate=drop_rate,
+            global_pool=global_pool,
+            distillation=self.dist,
         )
-        self.dist = distillation
-        if self.dist:
-            self.head_dist = (
-                nn.Linear(embed_dims[-1], num_classes)
-                if num_classes > 0
-                else nn.Identity()
-            )
-        else:
-            self.head_dist = None
 
         self.apply(self.init_weights)
         self.distilled_training = False
@@ -735,20 +748,18 @@ class EfficientFormerV2(nn.Module):
         self.num_classes = num_classes
         if global_pool is not None:
             self.global_pool = global_pool
-        self.head = (
-            nn.Linear(self.num_features, num_classes)
-            if num_classes > 0
-            else nn.Identity()
-        )
-        self.head_dist = (
-            nn.Linear(self.num_features, num_classes)
-            if num_classes > 0
-            else nn.Identity()
+        self.policy_head = PolicyHead(
+            self.num_features,
+            num_classes,
+            drop_rate=self.drop_rate,
+            global_pool=global_pool,
+            distillation=self.dist,
         )
 
     @torch.jit.ignore
     def set_distilled_training(self, enable=True):
         self.distilled_training = enable
+        self.policy_head.set_distilled_training(enable)
 
     def forward_features(self, x):
         x = self.stem(x)
@@ -757,23 +768,14 @@ class EfficientFormerV2(nn.Module):
         return x
 
     def forward_head(self, x, pre_logits: bool = False):
-        if self.global_pool == "avg":
-            x = x.mean(dim=(2, 3))
-        x = self.head_drop(x)
-        if pre_logits:
-            return x
-        x, x_dist = self.head(x), self.head_dist(x)
-        if self.distilled_training and self.training and not torch.jit.is_scripting():
-            # only return separate classification predictions when training in distilled mode
-            return x, x_dist
-        else:
-            # during standard train/finetune, inference average the classifier predictions
-            return (x + x_dist) / 2
+        policy = self.policy_head(x, pre_logits)
+
+        return policy
 
     def forward(self, x):
         x = self.forward_features(x)
-        x = self.forward_head(x)
-        return x
+        policy = self.forward_head(x)
+        return policy
 
 
 def _cfg(url="", **kwargs):
