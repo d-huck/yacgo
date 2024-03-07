@@ -479,14 +479,24 @@ class EfficientFormerV2Block(nn.Module):
 
 
 class Stem4(nn.Sequential):
-    def __init__(self, in_chs, out_chs, act_layer=nn.GELU, norm_layer=nn.BatchNorm2d):
+    def __init__(
+        self, in_chs, out_chs, stride=4, act_layer=nn.GELU, norm_layer=nn.BatchNorm2d
+    ):
         super().__init__()
+        self.stride = stride
+        if stride == 1:
+            stride1 = 1
+            stride2 = 1
+        else:
+            stride1 = stride // 2
+            stride2 = stride // 2 + stride % 2
+
         self.stride = 4
         self.conv1 = ConvNormAct(
             in_chs,
             out_chs // 2,
             kernel_size=3,
-            stride=2,
+            stride=stride1,
             padding=1,
             bias=True,
             norm_layer=norm_layer,
@@ -496,12 +506,38 @@ class Stem4(nn.Sequential):
             out_chs // 2,
             out_chs,
             kernel_size=3,
-            stride=2,
+            stride=stride2,
             padding=1,
             bias=True,
             norm_layer=norm_layer,
             act_layer=act_layer,
         )
+
+
+# class Stem4(nn.Sequential):
+#     def __init__(self, in_chs, out_chs, act_layer=nn.GELU, norm_layer=nn.BatchNorm2d):
+#         super().__init__()
+#         self.stride = 4
+#         self.conv1 = ConvNormAct(
+#             in_chs,
+#             out_chs // 2,
+#             kernel_size=3,
+#             stride=2,
+#             padding=1,
+#             bias=True,
+#             norm_layer=norm_layer,
+#             act_layer=act_layer,
+#         )
+#         self.conv2 = ConvNormAct(
+#             out_chs // 2,
+#             out_chs,
+#             kernel_size=3,
+#             stride=2,
+#             padding=1,
+#             bias=True,
+#             norm_layer=norm_layer,
+#             act_layer=act_layer,
+#         )
 
 
 class EfficientFormerV2Stage(nn.Module):
@@ -601,11 +637,15 @@ class EfficientFormerV2(nn.Module):
         norm_layer = partial(get_norm_layer(norm_layer), eps=norm_eps)
         act_layer = get_act_layer(act_layer)
 
+        stride = 1
         self.stem = Stem4(
-            in_chans, embed_dims[0], act_layer=act_layer, norm_layer=norm_layer
+            in_chans,
+            embed_dims[0],
+            stride=stride,
+            act_layer=act_layer,
+            norm_layer=norm_layer,
         )
         prev_dim = embed_dims[0]
-        stride = 4
 
         num_stages = len(depths)
         dpr = [
@@ -617,13 +657,14 @@ class EfficientFormerV2(nn.Module):
         stages = []
         for i in range(num_stages):
             curr_resolution = tuple([math.ceil(s / stride) for s in img_size])
+            print(curr_resolution)
             stage = EfficientFormerV2Stage(
                 prev_dim,
                 embed_dims[i],
                 depth=depths[i],
                 resolution=curr_resolution,
                 downsample=downsamples[i],
-                block_stride=2 if i == 2 else None,
+                # block_stride=2 if i == 2 else None,
                 downsample_use_attn=i >= 3,
                 block_use_attn=i >= 2,
                 num_vit=num_vit,
@@ -783,57 +824,66 @@ def _create_efficientformerv2(variant, pretrained=False, **kwargs):
     return model
 
 
-@register_model
-def efficientformerv2_s0(pretrained=False, **kwargs) -> EfficientFormerV2:
-    model_args = dict(
-        depths=EfficientFormer_depth["S0"],
-        embed_dims=EfficientFormer_width["S0"],
-        num_vit=2,
-        drop_path_rate=0.0,
-        mlp_ratios=EfficientFormer_expansion_ratios["S0"],
-    )
-    return _create_efficientformerv2(
-        "efficientformerv2_s0", pretrained=pretrained, **dict(model_args, **kwargs)
-    )
+# @register_model
+# def efficientformerv2_s0(pretrained=False, **kwargs) -> EfficientFormerV2:
+#     model_args = dict(
+#         depths=EfficientFormer_depth["S0"],
+#         embed_dims=EfficientFormer_width["S0"],
+#         num_vit=2,
+#         drop_path_rate=0.0,
+#         mlp_ratios=EfficientFormer_expansion_ratios["S0"],
+#     )
+#     return _create_efficientformerv2(
+#         "efficientformerv2_s0", pretrained=pretrained, **dict(model_args, **kwargs)
+#     )
 
 
-@register_model
-def efficientformerv2_s1(pretrained=False, **kwargs) -> EfficientFormerV2:
-    model_args = dict(
-        depths=EfficientFormer_depth["S1"],
-        embed_dims=EfficientFormer_width["S1"],
-        num_vit=2,
-        drop_path_rate=0.0,
-        mlp_ratios=EfficientFormer_expansion_ratios["S1"],
-    )
-    return _create_efficientformerv2(
-        "efficientformerv2_s1", pretrained=pretrained, **dict(model_args, **kwargs)
-    )
+# @register_model
+# def efficientformerv2_s1(pretrained=False, **kwargs) -> EfficientFormerV2:
+#     model_args = dict(
+#         depths=EfficientFormer_depth["S1"],
+#         embed_dims=EfficientFormer_width["S1"],
+#         num_vit=2,
+#         drop_path_rate=0.0,
+#         mlp_ratios=EfficientFormer_expansion_ratios["S1"],
+#     )
+#     return _create_efficientformerv2(
+#         "efficientformerv2_s1", pretrained=pretrained, **dict(model_args, **kwargs)
+#     )
 
 
-@register_model
-def efficientformerv2_s2(pretrained=False, **kwargs) -> EfficientFormerV2:
-    model_args = dict(
-        depths=EfficientFormer_depth["S2"],
-        embed_dims=EfficientFormer_width["S2"],
-        num_vit=4,
-        drop_path_rate=0.02,
-        mlp_ratios=EfficientFormer_expansion_ratios["S2"],
-    )
-    return _create_efficientformerv2(
-        "efficientformerv2_s2", pretrained=pretrained, **dict(model_args, **kwargs)
-    )
+# @register_model
+# def efficientformerv2_s2(pretrained=False, **kwargs) -> EfficientFormerV2:
+#     model_args = dict(
+#         depths=EfficientFormer_depth["S2"],
+#         embed_dims=EfficientFormer_width["S2"],
+#         num_vit=4,
+#         drop_path_rate=0.02,
+#         mlp_ratios=EfficientFormer_expansion_ratios["S2"],
+#     )
+#     return _create_efficientformerv2(
+#         "efficientformerv2_s2", pretrained=pretrained, **dict(model_args, **kwargs)
+#     )
 
 
-@register_model
-def efficientformerv2_l(pretrained=False, **kwargs) -> EfficientFormerV2:
-    model_args = dict(
-        depths=EfficientFormer_depth["L"],
-        embed_dims=EfficientFormer_width["L"],
-        num_vit=6,
-        drop_path_rate=0.1,
-        mlp_ratios=EfficientFormer_expansion_ratios["L"],
-    )
-    return _create_efficientformerv2(
-        "efficientformerv2_l", pretrained=pretrained, **dict(model_args, **kwargs)
-    )
+# @register_model
+# def efficientformerv2_l(pretrained=False, **kwargs) -> EfficientFormerV2:
+#     model_args = dict(
+#         depths=EfficientFormer_depth["L"],
+#         embed_dims=EfficientFormer_width["L"],
+#         num_vit=6,
+#         drop_path_rate=0.1,
+#         mlp_ratios=EfficientFormer_expansion_ratios["L"],
+#     )
+#     return _create_efficientformerv2(
+#         "efficientformerv2_l", pretrained=pretrained, **dict(model_args, **kwargs)
+#     )
+
+
+if __name__ == "__main__":
+    # test the function
+    import numpy as np
+
+    inputs = np.random.rand(10, 12, 19, 19)
+    model = efficientformerv2_s0()
+    print(inputs.shape)
