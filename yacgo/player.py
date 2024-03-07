@@ -1,6 +1,5 @@
 import numpy as np
 from yacgo.go import game, govars
-from sklearn.preprocessing import normalize
 
 class Player:
     def __init__(self, player):
