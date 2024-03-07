@@ -16,7 +16,7 @@ class Game:
             self.turn = game.turn(self.state)
             self.done = game.game_ended(self.state)
             if self.done:
-                self.scores = game.winning(self.state)
+                self.score = game.winning(self.state)
 
         return self.score
 
