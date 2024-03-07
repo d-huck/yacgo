@@ -4,7 +4,7 @@ from typing import List
 from yacgo.go import game, govars
 
 class MCTSSearch:
-    def __init__(self, state, model, c_puct=1.1, noise=False, komi=0):
+    def __init__(self, state, model, root=None, noise=False, c_puct=1.1, komi=0):
         self.state = state
         self.model = model
         self.c_puct = c_puct
@@ -12,7 +12,12 @@ class MCTSSearch:
         self.noise = noise
         self.komi = komi
         self.sims_run = 0
-        self.root: MCTSNode = MCTSNode(state, parent=None, search=self)
+        if root is None:
+            self.root: MCTSNode = MCTSNode(state, parent=None, search=self)
+        else:
+            self.root: MCTSNode = root
+            self.root.total_visits = 1
+            self.root.parent = None
         
     def sim(self):
         child = self.root.best_child(self.c_puct)
@@ -39,27 +44,25 @@ class MCTSSearch:
         return e / np.sum(e)
 
     def action_probs_nodes(self):
-        pass
+        return self.action_probs(), self.root.children
 
 
 class MCTSNode:
     def __init__(self, state, parent, search: MCTSSearch):
         self.search = search
         self.state = state
-        self.total_visits = 1
+        self.total_visits = 0
         self.parent: MCTSNode = parent
         self.terminal = False
+        self.valid_moves = game.valid_moves(state)
+        self.valid_move_count = sum(self.valid_moves)
         if game.game_ended(state):
-            self.valid_move_count = 0
-            self.value = game.winning(state, self.search.komi)
+            self.value = game.winning(state, self.search.komi) * game.turn_pm(state)
             self.terminal = True
         else:
-            self.valid_moves = game.valid_moves(state)
-            self.valid_move_count = sum(self.valid_moves)
             self.children: List[MCTSNode] = [None] * search.action_dim
-            self.child_visits = [0] * search.action_dim
-            self.value, self.policy = search.model.forward_state(state)
-            self.policy *= self.valid_moves
+            # self.child_visits = [0] * search.action_dim
+            self.value, self.policy = search.model.forward_state(state) # TODO: Can we remove invalid moves from channel features?
 
     def value_score(self):
         return self.value / self.total_visits
@@ -71,11 +74,12 @@ class MCTSNode:
             return 0.75 * self.policy[i] + 0.25 * np.random.dirichlet(10.83 / (self.children[i].valid_move_count + 1))
 
     def best_child(self, c_puct=1.1):
-        if self.terminal:
+        if self.terminal: # TODO: we could also return None to prevent an extra backprop if we want
             return self
- 
-        puct = [-c.value_score() + c_puct * self.noisy_policy(i) * np.sqrt(self.total_visits) / (1 + self.child_visits[i]) 
-            if c is not None else (0 if self.valid_moves[i] == 1 else -np.inf) for i, c in enumerate(self.children)]
+            
+        # TODO: refactor for clarity
+        puct = [(-c.value_score() if c is not None else 0) + c_puct * self.noisy_policy(i) * np.sqrt(self.total_visits - 1) / (1 + self.children[i].total_visits) 
+            if self.valid_moves[i] == 1 else -np.inf for i, c in enumerate(self.children)]
 
         # print(puct)
         child_to_expand = np.argmax(puct)
@@ -83,7 +87,6 @@ class MCTSNode:
             self.children[child_to_expand] = MCTSNode(game.next_state(self.state, child_to_expand), parent=self, search=self.search)
             return self.children[child_to_expand]
         else:
-            self.child_visits[child_to_expand] += 1
             return self.children[child_to_expand].best_child()
 
     def backup(self, value):
