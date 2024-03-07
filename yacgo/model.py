@@ -478,7 +478,7 @@ class EfficientFormerV2Block(nn.Module):
         return x
 
 
-class Stem4(nn.Sequential):
+class Stem(nn.Sequential):
     def __init__(
         self, in_chs, out_chs, stride=4, act_layer=nn.GELU, norm_layer=nn.BatchNorm2d
     ):
@@ -581,6 +581,27 @@ class EfficientFormerV2Stage(nn.Module):
         return x
 
 
+class ValueHead(nn.Module):
+    def __init__(
+        self,
+        num_features,
+        global_pool="avg",
+        drop_rate=0.0,
+    ):
+        super().__init__()
+        self.head_drop = nn.Dropout(drop_rate)
+        self.global_pool = global_pool
+        self.head = nn.Linear(num_features, 1)
+        self.act = nn.Tanh()
+
+    def forward(self, x):
+        if self.global_pool == "avg":
+            x = x.mean(dim=(2, 3))
+        x = self.head_drop(x)
+        x = self.head(x)
+        return self.act(x)
+
+
 class PolicyHead(nn.Module):
     def __init__(
         self,
@@ -655,7 +676,7 @@ class EfficientFormerV2(nn.Module):
         act_layer = get_act_layer(act_layer)
 
         stride = 1
-        self.stem = Stem4(
+        self.stem = Stem(
             in_chans,
             embed_dims[0],
             stride=stride,
@@ -700,7 +721,7 @@ class EfficientFormerV2(nn.Module):
             stages.append(stage)
         self.stages = nn.Sequential(*stages)
 
-        # Policy head
+        # Policy and value heads
         self.dist = distillation
         self.num_features = embed_dims[-1]
         self.norm = norm_layer(embed_dims[-1])
@@ -711,6 +732,12 @@ class EfficientFormerV2(nn.Module):
             drop_rate=drop_rate,
             global_pool=global_pool,
             distillation=self.dist,
+        )
+
+        self.value_head = ValueHead(
+            embed_dims[-1],
+            drop_rate=drop_rate,
+            global_pool=global_pool,
         )
 
         self.apply(self.init_weights)
@@ -768,14 +795,13 @@ class EfficientFormerV2(nn.Module):
         return x
 
     def forward_head(self, x, pre_logits: bool = False):
+        value = self.value_head(x)
         policy = self.policy_head(x, pre_logits)
-
-        return policy
+        return value, policy
 
     def forward(self, x):
         x = self.forward_features(x)
-        policy = self.forward_head(x)
-        return policy
+        return self.forward_head(x)
 
 
 def _cfg(url="", **kwargs):
