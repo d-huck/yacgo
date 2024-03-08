@@ -38,3 +38,5 @@ class GameGenerator():
         winner = game.winning(state)
         for d in data:
             d.value = winner * game.turn_pm(d.state)
+
+        return data
