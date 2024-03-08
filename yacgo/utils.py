@@ -30,10 +30,14 @@ def make_args():
         "--inference_batch_size",
         type=int,
         default=128,
-        help="Max batch size for inference. Due to multiple servers being used, actual batch size will usually be lower to minimize time a game is waiting for a server to finish. Defaults to 128.",
+        help=(
+            "Max batch size for inference. Due to multiple servers being used,"
+            "actual batch size will usually be lower to minimize time a game is "
+            "waiting for a server to finish. Defaults to 128.",
+        ),
     )
     parser.add_argument(
-        "--num_servers", type=int, default=2, help="Number of inferenceservers to use"
+        "--num_servers", type=int, default=2, help="Number of inference servers to use"
     )
     parser.add_argument(
         "--num_games", type=int, default=128, help="Number of games to play"
