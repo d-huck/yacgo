@@ -136,11 +136,8 @@ if __name__ == "__main__":
     for game in games:
         game.start()
 
-    count = 0
     for game in games:
         game.join()
-        # count += 1
-        # # print(f"{count} games finished", end="\r")
 
     end = time.time()
     n_games = JOBS * args.num_games
