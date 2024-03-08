@@ -4,15 +4,16 @@ See https://stackoverflow.com/questions/73764403/how-can-a-zmq-server-process-re
 """
 
 import argparse
-import msgpack
 import multiprocessing as mp
-import numpy as np
 import time
-import torch
 import uuid
+
+import msgpack
+import numpy as np
+import torch
 import zmq
 
-from yacgo.model import EfficientFormerV2
+from yacgo.vit import EfficientFormerV2
 
 JOBS = 1000
 
@@ -33,12 +34,14 @@ def computation(inputs: np.ndarray, model: EfficientFormerV2, args):
     return outputs[1].cpu().numpy()
 
 
-def server(port, args):
+def inference_server(port, args):
     context = zmq.Context.instance()
     socket = context.socket(zmq.ROUTER)
     socket.bind(f"tcp://*:{port}")
+
     socket.setsockopt(zmq.LINGER, 0)
     socket.setsockopt(zmq.RCVTIMEO, 1)
+
     model = EfficientFormerV2(
         depths=[2, 2, 6, 4],  # TODO: fine tune and make constants in model.py
         in_chans=12,  # num of game state channels
@@ -111,8 +114,8 @@ if __name__ == "__main__":
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--board_size", type=int, default=19)
     parser.add_argument("--batch_size", type=int, default=128)
-    parser.add_argument("--num_servers", type=int, default=8)
-    parser.add_argument("--num_games", type=int, default=2048)
+    parser.add_argument("--num_servers", type=int, default=2)
+    parser.add_argument("--num_games", type=int, default=128)
     parser.add_argument("--num_feature_channels", "-fc", type=int, default=12)
 
     args = parser.parse_args()
@@ -121,7 +124,7 @@ if __name__ == "__main__":
     games = []
     servers = []
     for port in ports:
-        servers.append(mp.Process(target=server, args=(port, args)))
+        servers.append(mp.Process(target=inference_server, args=(port, args)))
 
     for _ in range(args.num_games):
         games.append(mp.Process(target=client, args=(ports, args)))
