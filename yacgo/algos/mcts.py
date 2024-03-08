@@ -16,7 +16,7 @@ class MCTSSearch:
             self.root: MCTSNode = MCTSNode(state, parent=None, search=self)
         else:
             self.root: MCTSNode = root
-            self.root.total_visits = 1
+            self.sims_run = self.root.total_visits
             self.root.parent = None
         
     def sim(self):
@@ -32,7 +32,7 @@ class MCTSSearch:
         if self.sims_run < self.root.valid_move_count:
             raise ValueError(f"# sims must be at least {self.root.valid_move_count}")
         
-        return np.best_child(c_puct=0)
+        return np.argmax(self.action_probs())
     
     def action_probs(self):
         if self.sims_run < self.root.valid_move_count:
@@ -71,7 +71,8 @@ class MCTSNode:
         if not self.search.noise:
             return self.policy[i]
         else:
-            return 0.75 * self.policy[i] + 0.25 * np.random.dirichlet(10.83 / (self.children[i].valid_move_count + 1))
+            return 0.75 * self.policy[i] \
+                + 0.25 * np.random.dirichlet(0.03 * game.action_size(self.state) / (self.children[i].valid_move_count + 1))
 
     def best_child(self, c_puct=1.1):
         if self.terminal: # TODO: we could also return None to prevent an extra backprop if we want
