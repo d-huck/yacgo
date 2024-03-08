@@ -23,7 +23,6 @@ def init_state(size):
     state = np.zeros((govars.NUM_CHNLS, size, size))
     return state
 
-
 def batch_init_state(batch_size, board_size):
     # return initial board (numpy board)
     batch_state = np.zeros((batch_size, govars.NUM_CHNLS, board_size, board_size))
@@ -251,6 +250,8 @@ def turn(state):
     """
     return int(np.max(state[govars.TURN_CHNL]))
 
+def turn_pm(state):
+    return 1 if turn(state) == govars.BLACK else -1
 
 def batch_turn(batch_state):
     return np.max(batch_state[:, govars.TURN_CHNL], axis=(1, 2)).astype(np.int32)

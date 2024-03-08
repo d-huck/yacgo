@@ -1,6 +1,5 @@
 import numpy as np
 from yacgo.go import game, govars
-from sklearn.preprocessing import normalize
 
 class Player:
     def __init__(self, player):
@@ -13,7 +12,10 @@ class Player:
         return np.argmax(govars.INVD_CHNL * self.action_probs(state))
     
     def sample_action(self, state):
-        return np.random.choice(np.arange(game.action_size(state)), p=game.valid_moves(state) * self.action_probs(state))
+        dist = game.valid_moves(state) * self.action_probs(state)
+        dist = dist / np.sum(dist)
+        dist[-1] = max(0, 1 - np.sum(dist[0:-1]))
+        return np.random.choice(np.arange(game.action_size(state)), p=dist)
     
 
 class RandomPlayer(Player):
