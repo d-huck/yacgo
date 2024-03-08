@@ -38,7 +38,7 @@ from timm.layers import (
 from timm.layers import DropPath, trunc_normal_, to_2tuple, to_ntuple, ndgrid
 from timm.models._builder import build_model_with_cfg
 from timm.models._manipulate import checkpoint_seq
-from timm.models._registry import generate_default_cfgs, register_model
+from timm.models._registry import generate_default_cfgs
 
 
 EfficientFormer_width = {
@@ -803,7 +803,7 @@ class EfficientFormerV2(nn.Module):
     def forward(self, x):
         x = self.forward_features(x)
         return self.forward_head(x)
-    
+
     def forward_state(self, state):
         # value, policy = self(torch.from_numpy(state).float().unsqueeze(0))
         # return value.item(), policy.squeeze().detach().numpy()
