@@ -15,6 +15,7 @@ class MCTSSearch:
         if root is None:
             self.root: MCTSNode = MCTSNode(state, parent=None, search=self)
         else:
+            assert np.array_equal(root.state, state)
             self.root: MCTSNode = root
             self.sims_run = self.root.total_visits
             self.root.parent = None
@@ -51,18 +52,17 @@ class MCTSNode:
     def __init__(self, state, parent, search: MCTSSearch):
         self.search = search
         self.state = state
-        self.total_visits = 0
+        self.total_visits = 1
         self.parent: MCTSNode = parent
         self.terminal = False
         self.valid_moves = game.valid_moves(state)
         self.valid_move_count = sum(self.valid_moves)
+        self.children: List[MCTSNode] = [None] * search.action_dim
         if game.game_ended(state):
             self.value = game.winning(state, self.search.komi) * game.turn_pm(state)
             self.terminal = True
         else:
-            self.children: List[MCTSNode] = [None] * search.action_dim
-            # self.child_visits = [0] * search.action_dim
-            self.value, self.policy = search.model.forward_state(state) # TODO: Can we remove invalid moves from channel features?
+            self.value, self.policy = search.model.forward(state) # TODO: Can we remove invalid moves from channel features?
 
     def value_score(self):
         return self.value / self.total_visits
@@ -79,7 +79,7 @@ class MCTSNode:
             return self
             
         # TODO: refactor for clarity
-        puct = [(-c.value_score() if c is not None else 0) + c_puct * self.noisy_policy(i) * np.sqrt(self.total_visits - 1) / (1 + self.children[i].total_visits) 
+        puct = [(-c.value_score() if c is not None else 0) + c_puct * self.noisy_policy(i) * np.sqrt(self.total_visits - 1) / (1 + (self.children[i].total_visits if c is not None else 0)) 
             if self.valid_moves[i] == 1 else -np.inf for i, c in enumerate(self.children)]
 
         # print(puct)

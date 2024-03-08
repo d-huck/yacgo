@@ -18,6 +18,8 @@ from yacgo.vit import (
     EfficientFormerV2,
 )
 
+from yacgo.go import game
+
 
 class Model(object):
     """
@@ -90,6 +92,12 @@ class ViTWrapper(object):
         """
         raise NotImplementedError()
 
+class InferenceRandom(Model, ViTWrapper):
+    def __init__(self):
+        pass
+
+    def forward(self, inputs):
+        return np.random.random(), np.random.random(game.action_size(inputs))
 
 class InferenceLocal(Model, ViTWrapper):
     """Simple Model interface that handles inference locally, for playing games against
