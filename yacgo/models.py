@@ -10,6 +10,7 @@ import msgpack
 import numpy as np
 import torch
 import zmq
+import torch
 
 from yacgo.vit import (
     EfficientFormer_depth,
@@ -61,6 +62,11 @@ class ViTWrapper(object):
         ).to(args.device)
         self.model_size = args.model_size
         self.device = args.device
+        self.board_size = args.board_size
+        self.n_chans = args.num_feature_channels
+
+    def __repr__(self):
+        return f"ViTWrapper(model_size={self.model_size}, device={self.device}, board_size={self.board_size}, n_chans={self.n_chans})"
 
     def load_pretrained(self, path: str):
         """
@@ -275,3 +281,121 @@ class Trainer(ViTWrapper):  # TODO: implement training
 
     def __init__(self, args: dict):
         super().__init__(args)
+
+
+if __name__ == "__main__":
+    print("This is the models module. Please run the main.py file.")
+
+    from yacgo.utils import make_args
+    from tqdm.auto import tqdm
+    import os
+    from torch.utils.data import TensorDataset, DataLoader
+
+    args = make_args()
+    args.device = "cuda" if torch.cuda.is_available() else "mps"
+    args.num_feature_channels = 22
+    trainer = Trainer(args)
+    print(trainer)
+
+    data_dir = os.path.join(os.getcwd(), "data")
+
+    def generate_data(data_dir):
+        for root, dirs, files in os.walk(data_dir):
+            pos_len = 19
+            for file in files:
+                if file.endswith(".npz"):
+                    npz = np.load(os.path.join(root, file))
+                    binaryInputNCHWPacked = npz["binaryInputNCHWPacked"]
+                    binaryInputNCHW = np.unpackbits(binaryInputNCHWPacked, axis=2)
+                    assert len(binaryInputNCHW.shape) == 3
+                    assert (
+                        binaryInputNCHW.shape[2] == ((pos_len * pos_len + 7) // 8) * 8
+                    )
+                    binaryInputNCHW = binaryInputNCHW[:, :, : pos_len * pos_len]
+                    valueTargetsNCHW = npz["valueTargetsNCHW"].astype(np.float32)
+                    policyTargetsNCMove = npz["policyTargetsNCMove"].astype(np.float32)
+                    globalTargetsNC = npz["globalTargetsNC"]
+                    policy = np.stack([p[0] for p in policyTargetsNCMove])
+                    scoreDistrN = npz["scoreDistrN"].astype(np.float32)
+
+                    def value_(x):
+                        if x[0] > 0:
+                            return 1.0
+                        elif x[1] > 0:
+                            return -1.0
+                        else:
+                            return 0.0
+
+                    values = np.stack([value_(p) for p in globalTargetsNC])
+                    state = np.reshape(
+                        binaryInputNCHW,
+                        (
+                            binaryInputNCHW.shape[0],
+                            binaryInputNCHW.shape[1],
+                            pos_len,
+                            pos_len,
+                        ),
+                    ).astype(np.float32)
+                    out = {
+                        "state": state,
+                        "values": values,
+                        "policy": policy,
+                    }
+                    yield out
+
+    states = []
+    values = []
+    policies = []
+    for i, data in enumerate(generate_data(data_dir)):
+        states.append(data["state"])
+        values.append(data["values"])
+        policies.append(data["policy"])
+
+    print("Loading Data...")
+    states = np.concatenate(states, axis=0).tolist()
+    values = np.concatenate(values, axis=0).tolist()
+    policies = np.concatenate(policies, axis=0).tolist()
+
+    print("Data Loaded")
+    device = "cuda" if torch.cuda.is_available() else "mps"
+    print("Device:", device)
+
+    print("Initializing Model...")
+    model = EfficientFormerV2(
+        depths=[2, 2, 6, 4],  # TODO: fine tune and make constants in model.py
+        in_chans=22,  # num of game state channels
+        img_size=19,  # TODO: args.board_size
+        embed_dims=(32, 64, 96, 172),
+        downsamples=(False, True, True, True),
+        num_vit=2,
+        mlp_ratios=(4, 4, (4, 3, 3, 3, 4, 4), (4, 3, 3, 4)),
+        num_classes=19**2 + 1,
+    ).to(device)
+
+    states = torch.Tensor(states)
+    policies = torch.Tensor(policies)
+    values = torch.Tensor(values)
+
+    print("Creating Dataset...")
+    dataset = TensorDataset(states, values, policies)
+    dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+    criterion = torch.nn.CrossEntropyLoss()
+    regressor = torch.nn.MSELoss()
+
+    model.train()
+    print("Beginning training...")
+    for i, (state, value, policy) in tqdm(enumerate(dataloader)):
+        state = state.to(device)
+        value = value.to(device)
+        policy = policy.to(device)
+        optimizer.zero_grad()
+        out = model.forward(state)
+        loss = 0.5 * criterion(out[1], policy) + 0.5 * regressor(out[0], value)
+        loss.backward()
+        optimizer.step()
+
+        if i % 100 == 0:
+            print(f"Loss: {loss.item()}")
+        if i > 1000:
+            break
