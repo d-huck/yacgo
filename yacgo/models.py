@@ -289,7 +289,8 @@ if __name__ == "__main__":
     from yacgo.utils import make_args
     from tqdm.auto import tqdm
     import os
-    from torch.utils.data import TensorDataset, DataLoader
+    from datasets import Dataset
+    from torch.utils.data import DataLoader
 
     args = make_args()
     args.device = "cuda" if torch.cuda.is_available() else "mps"
@@ -315,7 +316,6 @@ if __name__ == "__main__":
                     valueTargetsNCHW = npz["valueTargetsNCHW"].astype(np.float32)
                     policyTargetsNCMove = npz["policyTargetsNCMove"].astype(np.float32)
                     globalTargetsNC = npz["globalTargetsNC"]
-                    policy = np.stack([p[0] for p in policyTargetsNCMove])
                     scoreDistrN = npz["scoreDistrN"].astype(np.float32)
 
                     def value_(x):
@@ -326,8 +326,9 @@ if __name__ == "__main__":
                         else:
                             return 0.0
 
-                    values = np.stack([value_(p) for p in globalTargetsNC])
-                    state = np.reshape(
+                    policy = [p[0] for p in policyTargetsNCMove]
+                    values = [value_(p) for p in globalTargetsNC]
+                    states = np.reshape(
                         binaryInputNCHW,
                         (
                             binaryInputNCHW.shape[0],
@@ -336,25 +337,27 @@ if __name__ == "__main__":
                             pos_len,
                         ),
                     ).astype(np.float32)
-                    out = {
-                        "state": state,
-                        "values": values,
-                        "policy": policy,
-                    }
+                    out = [
+                        {
+                            "state": s,
+                            "value": v,
+                            "policy": p,
+                        }
+                        for s, v, p in zip(states, values, policy)
+                    ]
                     yield out
 
-    states = []
-    values = []
-    policies = []
-    for i, data in enumerate(generate_data(data_dir)):
-        states.append(data["state"])
-        values.append(data["values"])
-        policies.append(data["policy"])
+    # examples = []
 
+    # for i, data in tqdm(enumerate(generate_data(data_dir))):
+    #     examples.extend(data)
+    #     if i > 1000:
+    #         break
+    # ds = Dataset.from_list(examples)
+
+    # ds.save_to_disk("data/valid_set")
     print("Loading Data...")
-    states = np.concatenate(states, axis=0).tolist()
-    values = np.concatenate(values, axis=0).tolist()
-    policies = np.concatenate(policies, axis=0).tolist()
+    dataset = Dataset.load_from_disk("data/valid_set")
 
     print("Data Loaded")
     device = "cuda" if torch.cuda.is_available() else "mps"
@@ -372,30 +375,48 @@ if __name__ == "__main__":
         num_classes=19**2 + 1,
     ).to(device)
 
-    states = torch.Tensor(states)
-    policies = torch.Tensor(policies)
-    values = torch.Tensor(values)
+    def collate_fn(example):
+        state = torch.stack([torch.tensor(ex["state"]) for ex in example])
+        value = torch.stack([torch.tensor(ex["value"]) for ex in example])
+        policy = torch.stack([torch.tensor(ex["policy"]) for ex in example])
 
-    print("Creating Dataset...")
-    dataset = TensorDataset(states, values, policies)
-    dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
+        return state, value, policy
+
+    dataloader = DataLoader(
+        dataset,
+        batch_size=256,
+        shuffle=True,
+        num_workers=8,
+        pin_memory=True,
+        collate_fn=collate_fn,
+    )
+
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
     criterion = torch.nn.CrossEntropyLoss()
     regressor = torch.nn.MSELoss()
 
     model.train()
     print("Beginning training...")
-    for i, (state, value, policy) in tqdm(enumerate(dataloader)):
-        state = state.to(device)
-        value = value.to(device)
-        policy = policy.to(device)
-        optimizer.zero_grad()
-        out = model.forward(state)
-        loss = 0.5 * criterion(out[1], policy) + 0.5 * regressor(out[0], value)
-        loss.backward()
-        optimizer.step()
+    pbar = tqdm(total=500)
+    for _ in range(500):
+        loss_avg = 0
+        for i, (states, values, policies) in tqdm(
+            enumerate(dataloader), total=len(dataloader), leave=False
+        ):
+            states = states.to(device)
+            values = values.to(device)
+            policies = policies.to(device)
+            optimizer.zero_grad()
+            values_pred, policy_pred = model.forward(states)
+            loss = 0.5 * criterion(policy_pred.squeeze(), policies) + 0.5 * regressor(
+                values_pred.squeeze(), values
+            )
+            loss.backward()
+            loss_avg += loss.detach().item()
+            optimizer.step()
 
-        if i % 100 == 0:
-            print(f"Loss: {loss.item()}")
-        if i > 1000:
-            break
+            if i % 10 == 0 and i != 0:
+                loss = loss_avg / 25
+                loss_avg = 0
+                tqdm.write(f"Average Batch Loss: {loss}")
+        pbar.update(1)
