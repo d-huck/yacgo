@@ -10,7 +10,7 @@ class Player:
         raise NotImplementedError("Cannot call method of Player")
     
     def best_action(self, state):
-        return np.argmax(govars.INVD_CHNL * self.action_probs(state))
+        return np.argmax(game.valid_moves(state) * self.action_probs(state))
     
     def sample_action(self, state):
         dist = game.valid_moves(state) * self.action_probs(state)
@@ -66,9 +66,9 @@ class MCTSPlayer(Player):
                     for c_p in c.children:
                         if c_p is not None and np.array_equal(c_p.state, state):
                             new_root = c_p
-            # new_root = [(c_p for c_p in c.children if c_p is not None and c_p.state == state) for c in self.search.root.children if c is not None]
+
             if new_root is None:
-                # Something unusual happened, but we'll just reset the search
+                # Picked an unexplored action, but we can just reset the search
                 self.search = MCTSSearch(state, self.model, root=None, noise=False, komi=self.komi)
             else:
                 self.search = MCTSSearch(state, self.model, root=new_root, noise=False, komi=self.komi)

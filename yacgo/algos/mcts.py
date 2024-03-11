@@ -40,7 +40,7 @@ class MCTSSearch:
             raise ValueError(f"# sims must be at least {self.root.valid_move_count}")
         
         scores = [c.total_visits / self.root.total_visits if c is not None else 0 for c in self.root.children]
-        # print(scores)
+        
         e = np.exp(scores)
         return e / np.sum(e)
 
@@ -76,6 +76,7 @@ class MCTSNode:
 
     def best_child(self, c_puct=1.1):
         if self.terminal: # TODO: we could also return None to prevent an extra backprop if we want
+            self.total_visits += 1
             return self
             
         # TODO: refactor for clarity

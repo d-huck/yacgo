@@ -98,6 +98,14 @@ class InferenceRandom(Model, ViTWrapper):
 
     def forward(self, inputs):
         return np.random.random(), np.random.random(game.action_size(inputs))
+    
+class InferenceEqual(Model, ViTWrapper):
+    def __init__(self):
+        pass
+
+    def forward(self, inputs):
+        pol = np.zeros(game.action_size(inputs)) + (1 / game.action_size(inputs))
+        return 0, pol
 
 class InferenceLocal(Model, ViTWrapper):
     """Simple Model interface that handles inference locally, for playing games against
