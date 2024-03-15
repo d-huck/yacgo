@@ -68,15 +68,15 @@ def custom_state_test():
         ]
     ]
 
-    test_state = np.array(white_test_state)
+    test_state = np.array(black_test_state)
     print(game.str(test_state))
     mcts = MCTSSearch(test_state, model, komi=1)
-    mcts.run_sims(100000)
+    mcts.run_sims(10000)
     print("action probs")
     print(mcts.action_probs())
 
     print("values")
-    print([c.value_score() if c is not None else 0 for c in mcts.root.children])
+    print([-c.value_score() if c is not None else 0 for c in mcts.root.children])
 
 
 custom_state_test()

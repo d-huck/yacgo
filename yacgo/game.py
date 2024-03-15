@@ -2,9 +2,10 @@ from yacgo.go import game, govars
 from yacgo.player import Player
 
 class Game:
-    def __init__(self, board_size, black: Player, white: Player):
+    def __init__(self, board_size, black: Player, white: Player, komi=0):
         self.state = game.init_state(board_size)
         self.players = [black, white]
+        self.komi = komi
         self.turn = govars.BLACK
         self.done = False
         self.score = 0
@@ -16,7 +17,7 @@ class Game:
             self.turn = game.turn(self.state)
             self.done = game.game_ended(self.state)
             if self.done:
-                self.score = game.winning(self.state)
+                self.score = game.winning(self.state, self.komi)
 
         return self.score
 
