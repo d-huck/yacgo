@@ -17,17 +17,20 @@ def gameplay_worker(ports, args):
         args (dict): args dict.
     """
     model = InferenceClient(ports)
-    data = DataGameClient(args)
+    data_client = DataGameClient(args)
     game_gen = GameGenerator(
         args.board_size,
         model,
     )
     print("Starting Game Generation...")
+    data = game_gen.sim_data(1024)
+    for d in data:
+        data_client.deposit(d)
     while True:
         data = game_gen.sim_game()
 
         for d in data:
-            data.deposit(d)
+            data_client.deposit(d)
 
 
 def main():
