@@ -10,6 +10,7 @@ from typing import Tuple
 import numpy as np
 import torch
 import zmq
+import msgpack
 
 from yacgo.utils import (
     pack_inference,
@@ -239,9 +240,10 @@ class Trainer(ViTWrapper):  # TODO: implement training
 
     def __init__(self, port: int, args: dict, server_address: str = "localhost"):
         super().__init__(args)
+        identity = f"TRAIN-{uuid.uuid4()}".encode("utf-8")
         self.context = zmq.Context.instance()
         self.socket = self.context.socket(zmq.REQ)
-        self.socket.setsockopt(zmq.IDENTITY, b"TRAIN-" + uuid.uuid4().bytes)
+        self.socket.setsockopt(zmq.IDENTITY, identity)
         self.socket.connect(f"tcp://{server_address}:{port}")
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-4)
         self.criterion = torch.nn.CrossEntropyLoss()
@@ -287,19 +289,27 @@ class Trainer(ViTWrapper):  # TODO: implement training
 
         return loss.item()
 
-    def train(
+    def run(
         self,
     ):
+        """
+        Runs the trainer indefinitely. Expects to receive a batch of inputs and
+        """
         losses = []
-        for i in range(self.training_steps):
-            self.socket.send(self.batch_size)
-            states, values, policies = unpack_examples(self.socket.recv())
-            loss = self.train_step(states, policies, values)
-            losses.append(loss)
-            avg = sum(losses) / len(losses)
-            print(f"Training Step {i}, Loss : {avg}")
-            if len(losses) > 10:
-                _ = losses.pop(0)
+        try:
+            for i in range(self.training_steps):
+                self.socket.send(msgpack.packb(self.batch_size))
+                states, values, policies = unpack_examples(self.socket.recv())
+                loss = self.train_step(states, policies, values)
+                losses.append(loss)
+                avg = sum(losses) / len(losses)
+                print(f"Training Step {i}, Loss : {avg}")
+                if len(losses) > 10:
+                    _ = losses.pop(0)
+        except KeyboardInterrupt:
+            pass
+        self.context.destroy()
+        print("Trainer has quit")
 
 
 # if __name__ == "__main__":
