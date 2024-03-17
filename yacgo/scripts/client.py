@@ -6,7 +6,7 @@ from multiprocessing import Process
 from yacgo.utils import make_args
 from yacgo.train_utils import GameGenerator
 from yacgo.models import InferenceClient
-from yacgo.databroker import DataGameClient
+from yacgo.data import DataGameClient
 
 
 def gameplay_worker(ports, args):
