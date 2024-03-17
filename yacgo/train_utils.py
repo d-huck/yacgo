@@ -1,26 +1,62 @@
-from yacgo.player import MCTSPlayer, RandomPlayer
-from yacgo.algos.mcts import MCTSSearch, MCTSNode
-from yacgo.go import game, govars
-from yacgo.game import Game
 from dataclasses import dataclass
-import numpy as np
 from typing import List, Tuple
 
+import msgpack
+import numpy as np
+
+from yacgo.algos.mcts import MCTSSearch
+from yacgo.game import Game
+from yacgo.go import game, govars
+from yacgo.player import MCTSPlayer, RandomPlayer
+
+
+# TODO: Could this all just be put into game.py and utils.py?
 @dataclass
 class TrainState:
     state: np.ndarray
     value: np.float32
     policy: np.ndarray
 
+    def pack(self) -> bytearray:
+        """Packs the TrainState into a zmq message.
+
+        Returns:
+            bytearray: message for zmq
+        """
+        s = (self.state.shape, self.state.tobytes())
+        v = (self.value.shape, self.value.tobytes())
+        p = (self.policy.shape, self.policy.tobytes())
+
+        return msgpack.packb((s, v, p))
+
+    @classmethod
+    def unpack(cls, message: bytearray) -> "TrainState":
+        """Create a TrainState from a zmq message.
+
+        Args:
+            message (bytearray): message from zmq
+
+        Returns:
+            TrainState: with information from the message
+        """
+        s, v, p = msgpack.unpackb(message)
+        state = np.frombuffer(s[1], np.float32).reshape(s[0])
+        value = np.frombuffer(v[1], np.float32).reshape(v[0])
+        policy = np.frombuffer(p[1], np.float32).reshape(p[0])
+        return cls(state, value, policy)
+
+
 class GameGenerator:
-    def __init__(self, board_size, model, komi=0, pcap_train=400, pcap_fast=100, pcap_prob=0.25):
+    def __init__(
+        self, board_size, model, komi=0, pcap_train=400, pcap_fast=100, pcap_prob=0.25
+    ):
         self.board_size = board_size
         self.model = model
         self.komi = komi
         self.pcap_train = pcap_train
         self.pcap_fast = pcap_fast
         self.pcap_prob = pcap_prob
-        
+
     def sim_game(self):
         data: List[TrainState] = []
         state = game.init_state(self.board_size)
@@ -31,8 +67,10 @@ class GameGenerator:
             action_probs, nodes = mcts.action_probs_nodes()
             if train:
                 data.append(TrainState(state, 0, action_probs))
-            
-            action = np.random.choice(np.arange(game.action_size(state)), p=action_probs)
+
+            action = np.random.choice(
+                np.arange(game.action_size(state)), p=action_probs
+            )
             state = game.next_state(state, action)
             mcts = MCTSSearch(state, self.model, root=nodes[action], noise=True)
 
@@ -41,7 +79,7 @@ class GameGenerator:
             d.value = winner * game.turn_pm(d.state)
 
         return data
-    
+
     def sim_games(self, num_games=1):
         data: List[TrainState] = []
         for _ in num_games:
@@ -58,10 +96,10 @@ class GameGenerator:
 
 @dataclass
 class CompetitionResult:
-    score: int # sum of results (+ means model1 performed better)
-    probs: Tuple[int] # (m1 win%, m2 win%)
-    games: np.ndarray # [-1, 1, 1, -1, 0, ...] (+ means model1 win)
-    bw_wins: Tuple[int] # (%black win, %white win) aggregate - just for analysis
+    score: int  # sum of results (+ means model1 performed better)
+    probs: Tuple[int]  # (m1 win%, m2 win%)
+    games: np.ndarray  # [-1, 1, 1, -1, 0, ...] (+ means model1 win)
+    bw_wins: Tuple[int]  # (%black win, %white win) aggregate - just for analysis
     raw_bw_games: np.ndarray
     raw_wb_games: np.ndarray
 
@@ -92,7 +130,7 @@ class ModelCompetition:
             g = Game(self.board_size, b_player, w_player, self.komi)
             result = g.play_full()
             raw_bw_results.append(result)
-        
+
         raw_wb_results = []
         for _ in range(wb_games):
             if self.model2 is None:
@@ -111,10 +149,23 @@ class ModelCompetition:
         raw_wb_results = np.array(raw_wb_results)
         score = np.sum(raw_bw_results) - np.sum(raw_wb_results)
         games = np.concatenate((raw_bw_results, raw_wb_results * -1))
-        probs = [(np.count_nonzero(games == 1) / num_games),
-                 (np.count_nonzero(games == -1) / num_games)]
-        bw_wins = [(np.count_nonzero(raw_bw_results == 1) + np.count_nonzero(raw_wb_results == 1)) / num_games,
-                   (np.count_nonzero(raw_bw_results == -1) + np.count_nonzero(raw_wb_results == -1)) / num_games]
+        probs = [
+            (np.count_nonzero(games == 1) / num_games),
+            (np.count_nonzero(games == -1) / num_games),
+        ]
+        bw_wins = [
+            (
+                np.count_nonzero(raw_bw_results == 1)
+                + np.count_nonzero(raw_wb_results == 1)
+            )
+            / num_games,
+            (
+                np.count_nonzero(raw_bw_results == -1)
+                + np.count_nonzero(raw_wb_results == -1)
+            )
+            / num_games,
+        ]
 
-        return CompetitionResult(score, probs, games, bw_wins, raw_bw_results, raw_wb_results)
-    
+        return CompetitionResult(
+            score, probs, games, bw_wins, raw_bw_results, raw_wb_results
+        )
