@@ -134,7 +134,7 @@ class DataBroker(object):
         while True:
             try:
                 address, _, message = self.socket.recv_multipart()
-                address = str(address)
+                address = str(address.decode("utf-8"))
                 if address.startswith("TRAIN"):
                     batch_size = int(msgpack.unpackb(message))
                     batch = self.get_batch(batch_size)
