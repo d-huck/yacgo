@@ -10,7 +10,7 @@ import msgpack
 import numpy as np
 import torch
 
-DATA_DTYPE = np.float32
+DATA_DTYPE = np.float32  # pylint: disable=C0103
 TORCH_DTYPE = torch.float32
 
 
@@ -64,7 +64,7 @@ def pack_inference(values: np.ndarray, policies: np.ndarray) -> bytearray:
 
 def unpack_inference(message: bytearray) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Unpackes inference result for use by MCTS tree search
+    Unpacks inference result for use by MCTS tree search
 
     Args:
         message (bytearray): packed message
