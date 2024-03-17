@@ -6,12 +6,15 @@ from dataclasses import dataclass
 import numpy as np
 from typing import List
 
+from yacgo.databroker import DEPOSIT, DATA_DTYPE
+
 
 @dataclass
 class TrainState:
     state: np.ndarray
     value: np.float32
     policy: np.ndarray
+    # TODO: Refactor and perhaps remove pack/unpack method after game saving is completed/discussed
 
     def pack(self):
         """Serializes the internal data into a byte array for transmission.
@@ -44,10 +47,10 @@ class TrainState:
         Returns:
             TrainState: _description_
         """
-        dtype, value, policy, state = msgpack.unpackb(buffer)
-        self.state = np.frombuffer(state[1], dtype).reshape(state[0])
-        self.value = np.frombuffer(value, dtype)
-        self.policy = np.frombuffer(policy[1], dtype).reshape(policy[0])
+        message_type, value, policy, state = msgpack.unpackb(buffer)
+        self.state = np.frombuffer(state[1], DATA_DTYPE).reshape(state[0])
+        self.value = np.frombuffer(value, DATA_DTYPE)
+        self.policy = np.frombuffer(policy[1], DATA_DTYPE).reshape(policy[0])
 
 
 class GameGenerator:
