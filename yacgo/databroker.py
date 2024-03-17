@@ -1,20 +1,24 @@
 """
-Implements a databroker class which handles the storing of data, construction of a replay buffer, and serving data to the trainer.
+Implements a databroker class which handles the storing of data, construction of 
+a replay buffer, and serving data to the trainer.
 
-All inputs to the DataBroker should consist of a message type and a message. The message type is used to determine the action to take with the message. 
+All inputs to the DataBroker should consist of a message type and a message. The 
+message type is used to determine the action to take with the message. 
 
-- In the case where the message type is DEPOSIT, the message is stored in the replay buffer. The expected message should be a tuple of (state, value, policy). Each item in the tuple should have the same _first_  dimension.
+- In the case where the message type is DEPOSIT, the message is stored in the 
+replay buffer. The expected message should be a tuple of (state, value, policy). 
+Each item in the tuple should have the same _first_  dimension.
 
-- In the case where the message type is TRAINING_BATCH, the message is used to request a batch of data from the replay buffer. The expected message should be a the same as above.
+- In the case where the message type is TRAINING_BATCH, the message is used to 
+request a batch of data from the replay buffer. The expected message should be 
+the same as above.
 """
 
 from queue import PriorityQueue
 from dataclasses import dataclass, field
-from typing import Any, Tuple
 from random import randint
 
 import msgpack
-import time
 import numpy as np
 import zmq
 
@@ -95,7 +99,7 @@ class DataBroker(object):
 
     def dump_to_disk(self, batch, path):
         """
-        Dumps data to disk for cachin
+        Dumps data to disk for caching
 
         Args:
             batch (_type_): _description_
