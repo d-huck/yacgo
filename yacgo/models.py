@@ -4,30 +4,23 @@ wrappers around the EfficientFormer and gives extra methods for reloading and
 saving models, as well as interfacing with the ZMQ.
 """
 
+import time
 import uuid
 from typing import Tuple
 
 import numpy as np
 import torch
 import zmq
-import msgpack
 
-from yacgo.utils import (
-    pack_inference,
-    unpack_examples,
-    pack_state,
-    unpack_inference,
-    unpack_state,
-)
+from yacgo.data import DataTrainClient
+from yacgo.go import game
+from yacgo.utils import pack_inference, pack_state, unpack_inference, unpack_state
 from yacgo.vit import (
     EfficientFormer_depth,
     EfficientFormer_expansion_ratios,
     EfficientFormer_width,
     EfficientFormerV2,
 )
-from yacgo.data import DataTrainClient
-
-from yacgo.go import game
 
 
 class Model(object):
@@ -268,15 +261,6 @@ class Trainer(ViTWrapper):  # TODO: implement training
         self.dataset = DataTrainClient(args.databroker_port, self.batch_size)
         self.model.train()
 
-    def get_batch(self):
-        """
-        Get a batch from the dataset
-
-        Returns:
-            _type_: _description_
-        """
-        return
-
     def train_step(
         self, states: torch.Tensor, policies: torch.Tensor, values: torch.Tensor
     ):
@@ -314,6 +298,10 @@ class Trainer(ViTWrapper):  # TODO: implement training
         try:
             for i in range(self.training_steps):
                 batch = self.dataset.get_batch()
+                if batch.batch_size == 0:
+                    print("Empty Batch, sleeping...")
+                    time.sleep(5)
+                    continue
                 loss = self.train_step(batch.states, batch.policies, batch.values)
                 losses.append(loss)
                 avg = sum(losses) / len(losses)
