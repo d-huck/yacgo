@@ -226,6 +226,7 @@ class DataBroker(object):
                         self.socket.send_multipart([address, b"", b""])
 
                 else:
+                    print("Received data example")
                     self.process_data(message)
             except zmq.error.Again:
                 pass

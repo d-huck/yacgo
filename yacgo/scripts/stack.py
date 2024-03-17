@@ -3,9 +3,11 @@ Runs the entire yacgo stack: 1 Trainer, 1 DataBroker, n InferenceServers, k Game
 """
 
 from multiprocessing import Process
+
+from yacgo.data import DataBroker, DataGameClient
+from yacgo.models import InferenceClient, InferenceServer, Trainer
+from yacgo.train_utils import GameGenerator
 from yacgo.utils import make_args
-from yacgo.models import InferenceServer, Trainer
-from yacgo.data import DataBroker
 
 
 def inference_worker(port, args):
@@ -20,27 +22,51 @@ def inference_worker(port, args):
     server.run()
 
 
-def databroker_worker(port, args):
+def databroker_worker(args):
     """Wrapper around a simple databroker worker.
 
     Args:
         port (int): Port server is listening on.
         args (dict): args dict.
     """
-    broker = DataBroker(port, args)
+    broker = DataBroker(args.databroker_port)
     print("Starting databroker...")
     broker.run()
 
 
-def trainer_worker(port, args):
+def trainer_worker(args):
     """Wrapper around a simple trainer worker.
 
     Args:
         args (dict): args dict.
     """
-    trainer = Trainer(port, args)
+    trainer = Trainer(args)
     print("Starting trainer...")
     trainer.run()
+
+
+def gameplay_worker(ports, args):
+    """Wrapper around a simple gameplay worker.
+
+    Args:
+        port (int): Port server is listening on.
+        args (dict): args dict.
+    """
+    model = InferenceClient(ports)
+    data_client = DataGameClient(args)
+    game_gen = GameGenerator(
+        args.board_size,
+        model,
+    )
+    print("Starting Game Generation...")
+    data = game_gen.sim_data(1024)
+    for d in data:
+        data_client.deposit(d)
+    while True:
+        data = game_gen.sim_game()
+
+        for d in data:
+            data_client.deposit(d)
 
 
 def main():
@@ -50,23 +76,39 @@ def main():
     args = make_args()
     try:
         servers = []
-        port = args.inference_server_port
-        for _ in range(args.num_servers):
+        ports = list(range(args.inference_server_port, args.num_servers))
+        for port in ports:
             servers.append(
                 Process(target=inference_worker, args=(port, args), daemon=True)
             )
-            port += 1
 
         for server in servers:
             server.start()
 
         # Start the databroker
-        broker = Process(
-            target=databroker_worker, args=(args.databroker_port, args), daemon=True
-        )
+        broker = Process(target=databroker_worker, args=(args,), daemon=True)
+        broker.start()
 
         # Start the trainer
         trainer = Process(target=trainer_worker, args=(args,))
+        trainer.start()
+
+        # start the games
+        games = []
+        for _ in range(args.num_games):
+            games.append(
+                Process(target=gameplay_worker, args=(ports, args), daemon=True)
+            )
+        for g in games:
+            g.start()
+
+        for s in servers:
+            s.join()
+        broker.join()
+        trainer.join()
+        for g in games:
+            g.join()
+
     except KeyboardInterrupt:
         pass
     finally:
