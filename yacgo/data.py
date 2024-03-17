@@ -14,25 +14,30 @@ request a batch of data from the replay buffer. The expected message should be
 the same as above.
 """
 
-from queue import PriorityQueue
-from dataclasses import dataclass, field
-from random import randint
+import os
 import uuid
+from dataclasses import dataclass, field
+from queue import PriorityQueue
+from random import randint
 
 import msgpack
 import numpy as np
 import zmq
 
-from yacgo.utils import pack_examples, unpack_examples, DATA_DTYPE
 from yacgo.train_utils import TrainState
+from yacgo.utils import DATA_DTYPE
 
 DEPOSIT = 0
+HIGH_PRIORITY = 50
 TRAINING_BATCH = 1
 QUIT = -1
 
 
 @dataclass
 class TrainingBatch:
+    """Dataclass for a training batch, identical to TrainState, except takes an
+    array for values and keeps track of batch size."""
+
     batch_size: int
     states: np.ndarray
     values: np.ndarray
@@ -87,7 +92,9 @@ class PrioritizedTrainState(object):
     @classmethod
     def from_train_state(cls, s: TrainState) -> "PrioritizedTrainState":
         "Create a prioritized data from a TrainState"
-        return cls(randint(0, 100), s.state.copy(), s.value.copy(), s.policy.copy())
+        return cls(
+            randint(0, HIGH_PRIORITY), s.state.copy(), s.value.copy(), s.policy.copy()
+        )
 
 
 class DataBroker(object):
@@ -96,16 +103,21 @@ class DataBroker(object):
     Trainer.
     """
 
-    def __init__(self, port: int = 7878, max_size: int = 500_000):
+    def __init__(
+        self, port: int = 7878, max_size: int = 500_000, cache_dir: str = None
+    ):
         self.max_size = max_size
         self.replay_buffer = PriorityQueue()
+        if cache_dir is not None and not cache_dir.endswith("/"):
+            cache_dir += "/"
+        self.cache_dir = cache_dir
         self.context = zmq.Context.instance()
         self.socket = self.context.socket(zmq.ROUTER)
         self.socket.bind(f"tcp://*:{port}")
         self.socket.setsockopt(zmq.LINGER, 0)
         self.socket.setsockopt(zmq.RCVTIMEO, 1)
 
-    def get_batch(self, batch_size: int = 32) -> TrainingBatch:
+    def get_batch(self, batch_size: int = 32, refill=True) -> TrainingBatch:
         """Returns a single batch from the replay buffer
 
         Args:
@@ -119,28 +131,44 @@ class DataBroker(object):
         policies = []
         for _ in range(batch_size):
             data = self.replay_buffer.get()
+            if data is None:
+                break
             states.append(data.state)
             values.append(data.value)
             policies.append(data.policy)
-            data.priority += 100  # put at the end of the queue
-            self.replay_buffer.put(data)
+            if refill:
+                data.priority += HIGH_PRIORITY  # put at the end of the queue
+                self.replay_buffer.put(data)
 
         states = np.stack(states)
         values = np.stack(values)
         policies = np.stack(policies)
 
         batch = TrainingBatch(batch_size, states, values, policies)
-        return batch.pack()
+        return batch
 
-    def load_from_disk(self, path):
+    def load_from_disk(self):
         """
         Loads cached data from disk
 
         Args:
             path (_type_): _description_
         """
+        if self.cache_dir is None:
+            return
 
-    def dump_to_disk(self, batch, path):
+        for file in os.listdir(self.cache_dir):
+            if file.endswith(".npz"):
+                data = np.load(file)
+                states = data["states"]
+                values = data["values"]
+                policies = data["policies"]
+            for s, v, p in zip(states, values, policies):
+                self.replay_buffer.put(
+                    PrioritizedTrainState(randint(0, HIGH_PRIORITY), s, v, p)
+                )
+
+    def dump_to_disk(self):
         """
         Dumps data to disk for caching
 
@@ -148,6 +176,15 @@ class DataBroker(object):
             batch (_type_): _description_
             path (_type_): _description_
         """
+        if self.cache_dir is None:
+            return
+
+        while not self.replay_buffer.empty():
+            batch = self.get_batch(1024, refill=False)
+            fp = self.cache_dir + str(uuid.uuid4()) + ".npz"
+            np.savez_compressed(
+                fp, states=batch.states, values=batch.values, policies=batch.policies
+            )
 
     def process_data(self, message):
         """
@@ -174,13 +211,14 @@ class DataBroker(object):
                 if address.startswith("TRAIN"):
                     batch_size = int(msgpack.unpackb(message))
                     batch = self.get_batch(batch_size)
-                    self.socket.send_multipart([address, b"", batch])
+                    self.socket.send_multipart([address, b"", batch.pack()])
                 else:
                     self.process_data(message)
             except zmq.error.Again:
                 pass
             except KeyboardInterrupt:
                 break
+        self.dump_to_disk()
         self.socket.close()
         self.context.term()
         print("DataBroker closed")
