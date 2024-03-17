@@ -25,6 +25,7 @@ from yacgo.vit import (
     EfficientFormer_width,
     EfficientFormerV2,
 )
+from yacgo.data import DataTrainClient
 
 from yacgo.go import game
 
@@ -257,19 +258,14 @@ class Trainer(ViTWrapper):  # TODO: implement training
     Implements a trainer thread to continuously take in game states and train the model.
     """
 
-    def __init__(self, port: int, args: dict, server_address: str = "localhost"):
+    def __init__(self, args: dict):
         super().__init__(args)
-        identity = f"TRAIN-{uuid.uuid4()}".encode("utf-8")
-        self.context = zmq.Context.instance()
-        self.socket = self.context.socket(zmq.REQ)
-        self.socket.setsockopt(zmq.IDENTITY, identity)
-        self.socket.connect(f"tcp://{server_address}:{port}")
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-4)
         self.criterion = torch.nn.CrossEntropyLoss()
         self.regressor = torch.nn.MSELoss()
-        self.dataset = None  # TODO: implement interfacing with dataset. This is simply a place holder.
         self.batch_size = args.training_batch_size
         self.training_steps = 500_000  #
+        self.dataset = DataTrainClient(args.databroker_port, self.batch_size)
         self.model.train()
 
     def get_batch(self):
@@ -317,9 +313,8 @@ class Trainer(ViTWrapper):  # TODO: implement training
         losses = []
         try:
             for i in range(self.training_steps):
-                self.socket.send(msgpack.packb(self.batch_size))
-                states, values, policies = unpack_examples(self.socket.recv())
-                loss = self.train_step(states, policies, values)
+                batch = self.dataset.get_batch()
+                loss = self.train_step(batch.states, batch.policies, batch.values)
                 losses.append(loss)
                 avg = sum(losses) / len(losses)
                 print(f"Training Step {i}, Loss : {avg}")
@@ -327,5 +322,5 @@ class Trainer(ViTWrapper):  # TODO: implement training
                     _ = losses.pop(0)
         except KeyboardInterrupt:
             pass
-        self.context.destroy()
+        self.dataset.destroy()
         print("Trainer has quit")
