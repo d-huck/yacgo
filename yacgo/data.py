@@ -17,20 +17,60 @@ the same as above.
 from queue import PriorityQueue
 from dataclasses import dataclass, field
 from random import randint
+import uuid
 
 import msgpack
 import numpy as np
 import zmq
 
 from yacgo.utils import pack_examples, unpack_examples, DATA_DTYPE
+from yacgo.train_utils import TrainState
 
 DEPOSIT = 0
 TRAINING_BATCH = 1
 QUIT = -1
 
 
+@dataclass
+class TrainingBatch:
+    batch_size: int
+    states: np.ndarray
+    values: np.ndarray
+    policies: np.ndarray
+
+    def pack(self) -> bytearray:
+        """
+        Packs the TrainingBatch into a zmq message.
+
+        Returns:
+            bytearray: message for zmq
+        """
+        s = (self.states.shape, self.states.tobytes())
+        v = (self.values.shape, self.values.tobytes())
+        p = (self.policies.shape, self.policies.tobytes())
+
+        return msgpack.packb((s, v, p))
+
+    @classmethod
+    def unpack(cls, message) -> "TrainingBatch":
+        """
+        Create a TrainingBatch from a zmq message.
+
+        Args:
+            message (bytearray): message from zmq
+
+        Returns:
+            TrainingBatch: with information from the message
+        """
+        s, v, p = msgpack.unpackb(message)
+        states = np.frombuffer(s[1], np.float32).reshape(s[0])
+        values = np.frombuffer(v[1], np.float32).reshape(v[0])
+        policies = np.frombuffer(p[1], np.float32).reshape(p[0])
+        return cls(states.shape[0], states, values, policies)
+
+
 @dataclass(order=True)
-class PrioritizedData(object):
+class PrioritizedTrainState(object):
     """
     Because items are placed into the replay buffer and trained on only once,
     this class creates a pseudo-shuffling by giving each training example a
@@ -44,14 +84,16 @@ class PrioritizedData(object):
     value: DATA_DTYPE = field(compare=False)
     policy: np.ndarray = field(compare=False)
 
+    @classmethod
+    def from_train_state(cls, s: TrainState) -> "PrioritizedTrainState":
+        "Create a prioritized data from a TrainState"
+        return cls(randint(0, 100), s.state.copy(), s.value.copy(), s.policy.copy())
+
 
 class DataBroker(object):
     """
     Databroker class to handle the consolidation and serving of data to the
     Trainer.
-
-    Args:
-        object (_type_): _description_
     """
 
     def __init__(self, port: int = 7878, max_size: int = 500_000):
@@ -63,14 +105,14 @@ class DataBroker(object):
         self.socket.setsockopt(zmq.LINGER, 0)
         self.socket.setsockopt(zmq.RCVTIMEO, 1)
 
-    def get_batch(self, batch_size: int = 32):
+    def get_batch(self, batch_size: int = 32) -> TrainingBatch:
         """Returns a single batch from the replay buffer
 
         Args:
-            batch_size (int, optional): _description_. Defaults to 32.
+            batch_size (int, optional): Batch size. Defaults to 32.
 
         Returns:
-            _type_: _description_
+            TrainingBatch: Training Batch
         """
         states = []
         values = []
@@ -80,14 +122,15 @@ class DataBroker(object):
             states.append(data.state)
             values.append(data.value)
             policies.append(data.policy)
-            data.priority += 1000  # put at the end of the queue
+            data.priority += 100  # put at the end of the queue
             self.replay_buffer.put(data)
 
         states = np.stack(states)
         values = np.stack(values)
         policies = np.stack(policies)
 
-        return pack_examples(states, values, policies)
+        batch = TrainingBatch(batch_size, states, values, policies)
+        return batch.pack()
 
     def load_from_disk(self, path):
         """
@@ -116,20 +159,9 @@ class DataBroker(object):
         Returns:
             _type_: _description_
         """
-        states, values, policies = unpack_examples(message)
-        assert (
-            len(states.shape) == 4
-            and len(values.shape) == 1
-            and len(policies.shape) == 2
-        ), "Invalid shapes for state, value, or policy"
-
-        states = states.tolist()
-        values = values.tolist()
-        policies = policies.tolist()
-
-        for s, v, p in zip(states, values, policies):
-            data = PrioritizedData(randint(0, 100), s, v, p)
-            self.replay_buffer.put(data)
+        example = TrainState.unpack(message)
+        data = PrioritizedTrainState.from_train_state(example)
+        self.replay_buffer.put(data)
 
     def run(self):
         """
@@ -152,3 +184,48 @@ class DataBroker(object):
         self.socket.close()
         self.context.term()
         print("DataBroker closed")
+
+
+class DataGameClient:
+    """Client for a GameGenerator to interact with the Databroker"""
+
+    def __init__(self, port: int = 7878):
+        self.context = zmq.Context.instance()
+        self.socket = self.context.socket(zmq.REQ)
+        self.socket.connect(f"tcp://localhost:{port}")
+        self.socket.setsockopt(zmq.IDENTITY, uuid.uuid4().bytes)
+
+    def deposit(self, example: TrainState):
+        """Deposits a single training example into the data broker"""
+        self.socket.send(example.pack())
+
+    def destroy(self):
+        """Sanely shuts down the zmq client"""
+        self.socket.close()
+        self.context.term()
+        print("DataTrainClient closed")
+
+
+class DataTrainClient:
+    """Client for a Trainer to interact with the Databroker"""
+
+    def __init__(self, port: int = 7878, batch_size: int = 32):
+        self.batch_size = batch_size
+        identity = f"TRAIN-{uuid.uuid4()}".encode("utf-8")
+        self.context = zmq.Context.instance()
+        self.socket = self.context.socket(zmq.REQ)
+        self.socket.connect(f"tcp://localhost:{port}")
+        self.socket.setsockopt(zmq.IDENTITY, identity)
+
+    def get_batch(
+        self,
+    ) -> TrainingBatch:
+        """Returns a TrainingBatch from the data broker"""
+        self.socket.send(msgpack.packb(self.batch_size))
+        return TrainingBatch.unpack(self.socket.recv())
+
+    def destroy(self):
+        """Sanely shuts down the zmq client"""
+        self.socket.close()
+        self.context.term()
+        print("DataTrainClient closed")
