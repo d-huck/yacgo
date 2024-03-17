@@ -1,5 +1,6 @@
 import numpy as np
 from yacgo.go import game, govars
+from yacgo.algos.mcts import MCTSSearch
 
 class Player:
     def __init__(self, player):
@@ -9,7 +10,7 @@ class Player:
         raise NotImplementedError("Cannot call method of Player")
     
     def best_action(self, state):
-        return np.argmax(govars.INVD_CHNL * self.action_probs(state))
+        return np.argmax(game.valid_moves(state) * self.action_probs(state))
     
     def sample_action(self, state):
         dist = game.valid_moves(state) * self.action_probs(state)
@@ -31,10 +32,12 @@ class HumanPlayer(Player):
         success = False
         while not success:
             try:
-                action_input = input("Move in the form \"x y\": ")
-                action2d = [int(i) for i in action_input.split(' ')]
-                action1d = game.action_to_1d(state, action2d)
-                print(action1d)
+                action_input = input("Move in the form \"x y\" or \"pass\": ")
+                if action_input == "pass":
+                    action1d = game.action_size(state) - 1
+                else:
+                    action2d = [int(i) for i in action_input.split(' ')]
+                    action1d = game.action_to_1d(state, action2d)
             except Exception as e:
                 pass
             else:
@@ -43,3 +46,37 @@ class HumanPlayer(Player):
 
         action[action1d] = 1
         return action
+    
+
+class MCTSPlayer(Player):
+    def __init__(self, player, model, sims=400, komi=0):
+        super().__init__(player)
+        self.search = None
+        self.model = model
+        self.komi = komi
+        self.sims = sims
+
+    def action_probs(self, state):
+        if self.search is None:
+            self.search = MCTSSearch(state, self.model, root=None, noise=False, komi=self.komi)
+        else:
+            new_root = None
+            for c in self.search.root.children:
+                if c is not None:
+                    for c_p in c.children:
+                        if c_p is not None and np.array_equal(c_p.state, state):
+                            new_root = c_p
+
+            if new_root is None:
+                # Picked an unexplored action, but we can just reset the search
+                self.search = MCTSSearch(state, self.model, root=None, noise=False, komi=self.komi)
+            else:
+                self.search = MCTSSearch(state, self.model, root=new_root, noise=False, komi=self.komi)
+        
+        self.search.run_sims(self.sims)
+        action_probs = self.search.action_probs()
+        return action_probs
+
+            
+        
+        
