@@ -26,7 +26,7 @@ def databroker_worker(args):
         port (int): Port server is listening on.
         args (dict): args dict.
     """
-    broker = DataBroker(args)
+    broker = DataBroker(args.databroker_port)
     print("Starting databroker...")
     broker.run()
 
@@ -37,9 +37,9 @@ def main():
     """
     args = make_args()
     try:
-        trainer = Process(target=trainer_worker, args=(args), daemon=True)
+        trainer = Process(target=trainer_worker, args=(args,), daemon=True)
         trainer.start()
-        databroker = Process(target=databroker_worker, args=(args), daemon=True)
+        databroker = Process(target=databroker_worker, args=(args,), daemon=True)
         databroker.start()
 
         trainer.join()
