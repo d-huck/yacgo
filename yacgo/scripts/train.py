@@ -1,28 +1,32 @@
+"""
+Example script on running a simple training server
+"""
+
 from multiprocessing import Process
 from yacgo.utils import make_args
 from yacgo.models import Trainer
 from yacgo.data import DataBroker
 
 
-def trainer_worker(port, args):
+def trainer_worker(args):
     """Wrapper around a simple trainer worker.
 
     Args:
         args (dict): args dict.
     """
-    trainer = Trainer(port, args)
+    trainer = Trainer(args)
     print("Starting trainer...")
     trainer.run()
 
 
-def databroker_worker(port, args):
+def databroker_worker(args):
     """Wrapper around a simple databroker worker.
 
     Args:
         port (int): Port server is listening on.
         args (dict): args dict.
     """
-    broker = DataBroker(port, args)
+    broker = DataBroker(args)
     print("Starting databroker...")
     broker.run()
 
@@ -33,13 +37,9 @@ def main():
     """
     args = make_args()
     try:
-        trainer = Process(
-            target=trainer_worker, args=(args.databroker_port, args), daemon=True
-        )
+        trainer = Process(target=trainer_worker, args=(args), daemon=True)
         trainer.start()
-        databroker = Process(
-            target=databroker_worker, args=(args.databroker_port, args), daemon=True
-        )
+        databroker = Process(target=databroker_worker, args=(args), daemon=True)
         databroker.start()
 
         trainer.join()
