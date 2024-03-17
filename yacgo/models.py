@@ -75,7 +75,7 @@ class ViTWrapper(object):
         self.n_chans = args.num_feature_channels
 
     def __repr__(self):
-        return f"ViTWrapper(model_size={self.model_size}, device={self.device}, board_size={self.board_size}, n_chans={self.n_chans})"
+        return f"ViTWrapper(model_size={self.model_size}, device={self.device}, board_size={self.board_size}, n_chans={self.n_chans})"  # pylint: disable=line-too-long
 
     def load_pretrained(self, path: str):
         """
