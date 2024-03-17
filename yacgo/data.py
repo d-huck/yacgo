@@ -18,6 +18,7 @@ import os
 import uuid
 from dataclasses import dataclass, field
 from queue import PriorityQueue
+from typing import Union
 from random import randint
 
 import msgpack
@@ -104,8 +105,13 @@ class DataBroker(object):
     """
 
     def __init__(
-        self, port: int = 7878, max_size: int = 500_000, cache_dir: str = None
+        self,
+        port: int = 7878,
+        max_size: int = 500_000,
+        min_size: int = 10_000,
+        cache_dir: str = None,
     ):
+        self.min_size = min_size
         self.max_size = max_size
         self.replay_buffer = PriorityQueue()
         if cache_dir is not None and not cache_dir.endswith("/"):
@@ -126,6 +132,9 @@ class DataBroker(object):
         Returns:
             TrainingBatch: Training Batch
         """
+        if self.replay_buffer.qsize() < self.min_size:
+            return TrainingBatch(0, np.array([]), np.array([]), np.array([]))
+
         states = []
         values = []
         policies = []
@@ -207,11 +216,15 @@ class DataBroker(object):
         while True:
             try:
                 address, _, message = self.socket.recv_multipart()
-                address = str(address.decode("utf-8"))
-                if address.startswith("TRAIN"):
+
+                if str(address, "utf-8").startswith("TRAIN"):
                     batch_size = int(msgpack.unpackb(message))
                     batch = self.get_batch(batch_size)
-                    self.socket.send_multipart([address, b"", batch.pack()])
+                    if batch is not None:
+                        self.socket.send_multipart([address, b"", batch.pack()])
+                    else:
+                        self.socket.send_multipart([address, b"", b""])
+
                 else:
                     self.process_data(message)
             except zmq.error.Again:
@@ -231,7 +244,7 @@ class DataGameClient:
         self.context = zmq.Context.instance()
         self.socket = self.context.socket(zmq.REQ)
         self.socket.connect(f"tcp://localhost:{port}")
-        self.socket.setsockopt(zmq.IDENTITY, uuid.uuid4().bytes)
+        self.socket.setsockopt(zmq.IDENTITY, str(uuid.uuid4()).encode("utf-8"))
 
     def deposit(self, example: TrainState):
         """Deposits a single training example into the data broker"""
@@ -249,15 +262,15 @@ class DataTrainClient:
 
     def __init__(self, port: int = 7878, batch_size: int = 32):
         self.batch_size = batch_size
-        identity = f"TRAIN-{uuid.uuid4()}".encode("utf-8")
+        identity = f"TRAIN-{uuid.uuid4()}".encode()
         self.context = zmq.Context.instance()
         self.socket = self.context.socket(zmq.REQ)
-        self.socket.connect(f"tcp://localhost:{port}")
         self.socket.setsockopt(zmq.IDENTITY, identity)
+        self.socket.connect(f"tcp://localhost:{port}")
 
     def get_batch(
         self,
-    ) -> TrainingBatch:
+    ) -> Union[TrainingBatch, None]:
         """Returns a TrainingBatch from the data broker"""
         self.socket.send(msgpack.packb(self.batch_size))
         return TrainingBatch.unpack(self.socket.recv())
