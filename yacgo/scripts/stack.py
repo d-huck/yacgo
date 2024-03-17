@@ -5,7 +5,7 @@ Runs the entire yacgo stack: 1 Trainer, 1 DataBroker, n InferenceServers, k Game
 from multiprocessing import Process
 from yacgo.utils import make_args
 from yacgo.models import InferenceServer, Trainer
-from yacgo.databroker import DataBroker
+from yacgo.data import DataBroker
 
 
 def inference_worker(port, args):

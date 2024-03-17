@@ -1,7 +1,7 @@
 from multiprocessing import Process
 from yacgo.utils import make_args
 from yacgo.models import Trainer
-from yacgo.databroker import DataBroker
+from yacgo.data import DataBroker
 
 
 def trainer_worker(port, args):
