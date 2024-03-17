@@ -169,6 +169,12 @@ def make_args():
         ),
     )
     parser.add_argument(
+        "--databroker_port",
+        type=int,
+        default=6000,
+        help="Port for the databroker server. Defaults to 6000",
+    )
+    parser.add_argument(
         "--num_games", type=int, default=128, help="Number of games to play"
     )
     parser.add_argument(
