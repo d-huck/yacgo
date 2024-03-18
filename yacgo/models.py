@@ -100,6 +100,8 @@ class ViTWrapper(object):
 
 
 class InferenceRandom(Model):
+    """Simple Model interface that returns random values for playing games against"""
+
     def __init__(self):
         pass
 
@@ -108,6 +110,8 @@ class InferenceRandom(Model):
 
 
 class InferenceEqual(Model):
+    """Simple Model interface that returns equal values for playing games against."""
+
     def __init__(self):
         pass
 
@@ -200,7 +204,10 @@ class InferenceServer(ViTWrapper):
         return value, policy
 
     def loop(self):
-        """main loop for the server. Expects to receive a batch of inputs and returns inference to the appropriate address."""
+        """
+        main loop for the server. Expects to receive a batch of inputs and
+        returns inference to the appropriate address.
+        """
         addresses = []
         inputs = np.empty(
             (
@@ -227,7 +234,7 @@ class InferenceServer(ViTWrapper):
             inputs = np.copy(inputs[:n])
             value, policy = self.inference(inputs)
             inf = Inference(value, policy)
-            for i, address in enumerate(addresses):
+            for _, address in enumerate(addresses):
                 self.socket.send_multipart([address, b"", inf.pack()])
 
     def run(self):
