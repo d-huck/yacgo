@@ -6,7 +6,7 @@ from multiprocessing import Process
 from yacgo.utils import make_args
 from yacgo.train_utils import GameGenerator
 from yacgo.models import InferenceClient
-from yacgo.data import DataGameClient
+from yacgo.data import DataGameClientMixin
 
 
 def gameplay_worker(ports, args):
@@ -17,11 +17,8 @@ def gameplay_worker(ports, args):
         args (dict): args dict.
     """
     model = InferenceClient(ports)
-    data_client = DataGameClient(args)
-    game_gen = GameGenerator(
-        args.board_size,
-        model,
-    )
+    data_client = DataGameClientMixin(args)
+    game_gen = GameGenerator(args.board_size, model, args)
     print("Starting Game Generation...")
     data = game_gen.sim_data(1024)
     for d in data:
@@ -50,7 +47,7 @@ def main():
             games.append(
                 Process(target=gameplay_worker, args=(ports, args), daemon=True)
             )
-
+        print("Starting games...")
         for game in games:
             game.start()
 
@@ -60,3 +57,7 @@ def main():
         pass
     finally:
         print("Exiting...")
+
+
+if __name__ == "__main__":
+    main()
