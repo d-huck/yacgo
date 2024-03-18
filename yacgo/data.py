@@ -16,6 +16,7 @@ the same as above.
 
 import os
 import uuid
+import logging
 from dataclasses import dataclass, field
 from queue import PriorityQueue
 from random import randint
@@ -32,9 +33,13 @@ HIGH_PRIORITY = 50
 TRAINING_BATCH = 1
 QUIT = -1
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass
 class TrainState:
+    """Dataclass for a single training example. Contains a state, value, and policy."""
+
     state: np.ndarray
     value: np.float32
     policy: np.ndarray
@@ -62,9 +67,10 @@ class TrainState:
             TrainState: with information from the message
         """
         s, v, p = msgpack.unpackb(message)
-        state = np.frombuffer(s[1], np.float32).reshape(s[0])
-        value = np.frombuffer(v[1], np.float32).reshape(v[0])
-        policy = np.frombuffer(p[1], np.float32).reshape(p[0])
+
+        state = np.frombuffer(s[1], DATA_DTYPE).reshape(s[0])
+        value = np.frombuffer(v[1], DATA_DTYPE)
+        policy = np.frombuffer(p[1], DATA_DTYPE).reshape(p[0])
         return cls(state, value, policy)
 
 
@@ -258,28 +264,33 @@ class DataBroker(object):
                         self.socket.send_multipart([address, b"", batch.pack()])
                     else:
                         self.socket.send_multipart([address, b"", b""])
-
+                    logger.debug("Sending batch request")
                 else:
-                    print("Received data example")
+                    print("Received data, processing...")
                     self.process_data(message)
+                    self.socket.send_multipart([address, b"", b""])
             except zmq.error.Again:
                 pass
             except KeyboardInterrupt:
                 break
+        print(
+            f"Databroker has {self.replay_buffer.qsize()} items in the queue, dumping to disk..."
+        )
         self.dump_to_disk()
         self.socket.close()
         self.context.term()
         print("DataBroker closed")
 
 
-class DataGameClient:
+class DataClient:
     """Client for a GameGenerator to interact with the Databroker"""
 
     def __init__(self, port: int = 7878):
+        identity = f"GAME-{uuid.uuid4()}".encode()
         self.context = zmq.Context.instance()
         self.socket = self.context.socket(zmq.REQ)
+        self.socket.setsockopt(zmq.IDENTITY, identity)
         self.socket.connect(f"tcp://localhost:{port}")
-        self.socket.setsockopt(zmq.IDENTITY, str(uuid.uuid4()).encode("utf-8"))
 
     def deposit(self, example: TrainState):
         """Deposits a single training example into the data broker"""
@@ -315,3 +326,52 @@ class DataTrainClient:
         self.socket.close()
         self.context.term()
         print("DataTrainClient closed")
+
+
+class KataGoDataClient(DataClient):
+    """
+    DataClient that reads KataGo game files from disks and deposits them to the
+    DataBroker
+    """
+
+    @staticmethod
+    def read_game(file_path: str):
+        """
+        Reads a single KataGo game file and returns the data
+
+        Args:
+            file_path (str): Path to the KataGo game file
+
+        Returns:
+            Tuple[np.ndarray, np.float32, np.ndarray]: state, value, policy
+        """
+        data = np.load(file_path)
+        policies = data["policyTargetsNCMove"].astype(DATA_DTYPE)
+        board_size = int(np.sqrt(policies.shape[-1] - 1))
+        states = data["binaryInputNCHWPacked"]
+        states = np.unpackbits(states, axis=2)
+        states = states[:, :, : board_size * board_size]
+        states = states.reshape(
+            states.shape[0], states.shape[1], board_size, board_size
+        ).astype(DATA_DTYPE)
+        values = data["globalTargetsNC"].astype(DATA_DTYPE)
+
+        for s, v, p in zip(states, values, policies):
+            yield TrainState(s, v[0] * 2 - 1, p[0])
+
+    def run(self, file_path: str):
+        """
+        Reads a directory of KataGo game files and deposits the data into the
+        DataBroker
+
+        Args:
+            file_path (str): Path to the KataGo game file
+        """
+        print(self.socket)
+        for file in os.listdir(file_path):
+            if file.endswith(".npz"):
+                fp = os.path.join(file_path, file)
+                for example in self.read_game(fp):
+                    print("Depositing example")
+                    self.deposit(example)
+                    _ = self.socket.recv()
