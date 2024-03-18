@@ -3,6 +3,7 @@ from scipy import ndimage
 from sklearn import preprocessing
 
 from yacgo.go import state_utils, govars
+from yacgo.data import DATA_DTYPE
 
 """
 The state of the game is a numpy array
@@ -18,23 +19,30 @@ The state of the game is a numpy array
 5 - Game over
 """
 
+
 def init_state(size):
     # return initial board (numpy board)
-    state = np.zeros((govars.NUM_CHNLS, size, size))
+    state = np.zeros((govars.NUM_CHNLS, size, size), dtype=DATA_DTYPE)
     return state
+
 
 def batch_init_state(batch_size, board_size):
     # return initial board (numpy board)
-    batch_state = np.zeros((batch_size, govars.NUM_CHNLS, board_size, board_size))
+    batch_state = np.zeros(
+        (batch_size, govars.NUM_CHNLS, board_size, board_size), dtype=DATA_DTYPE
+    )
     return batch_state
+
 
 def action_to_1d(state, action2d):
     board_shape = state.shape[1:]
     return action2d[0] * board_shape[0] + action2d[1]
 
+
 def action_to_2d(state, action1d):
     board_shape = state.shape[1:]
     return action1d // board_shape[0], action1d % board_shape[1]
+
 
 def next_state(state, action1d, canonical=False):
     # Deep copy the state to modify
@@ -61,7 +69,10 @@ def next_state(state, action1d, canonical=False):
         state[govars.PASS_CHNL] = 0
 
         # Assert move is valid
-        assert state[govars.INVD_CHNL, action2d[0], action2d[1]] == 0, ("Invalid move", action2d)
+        assert state[govars.INVD_CHNL, action2d[0], action2d[1]] == 0, (
+            "Invalid move",
+            action2d,
+        )
 
         # Add piece
         state[player, action2d[0], action2d[1]] = 1
@@ -80,7 +91,9 @@ def next_state(state, action1d, canonical=False):
                 ko_protect = killed_group[0]
 
     # Update invalid moves
-    state[govars.INVD_CHNL] = state_utils.compute_invalid_moves(state, player, ko_protect)
+    state[govars.INVD_CHNL] = state_utils.compute_invalid_moves(
+        state, player, ko_protect
+    )
 
     # Switch turn
     state_utils.set_turn(state)
@@ -103,8 +116,12 @@ def batch_next_states(batch_states, batch_action1d, canonical=False):
     batch_non_pass = np.nonzero(batch_action1d != pass_idx)[0]
     batch_prev_passed = batch_prev_player_passed(batch_states)
     batch_game_ended = np.nonzero(batch_prev_passed & (batch_action1d == pass_idx))
-    batch_action2d = np.array([batch_action1d[batch_non_pass] // board_shape[0],
-                               batch_action1d[batch_non_pass] % board_shape[1]]).T
+    batch_action2d = np.array(
+        [
+            batch_action1d[batch_non_pass] // board_shape[0],
+            batch_action1d[batch_non_pass] % board_shape[1],
+        ]
+    ).T
 
     batch_players = batch_turn(batch_states)
     batch_non_pass_players = batch_players[batch_non_pass]
@@ -119,21 +136,35 @@ def batch_next_states(batch_states, batch_action1d, canonical=False):
     batch_states[batch_non_pass, govars.PASS_CHNL] = 0
 
     # Assert all non-pass moves are valid
-    assert (batch_states[batch_non_pass, govars.INVD_CHNL, batch_action2d[:, 0], batch_action2d[:, 1]] == 0).all()
+    assert (
+        batch_states[
+            batch_non_pass, govars.INVD_CHNL, batch_action2d[:, 0], batch_action2d[:, 1]
+        ]
+        == 0
+    ).all()
 
     # Add piece
-    batch_states[batch_non_pass, batch_non_pass_players, batch_action2d[:, 0], batch_action2d[:, 1]] = 1
+    batch_states[
+        batch_non_pass,
+        batch_non_pass_players,
+        batch_action2d[:, 0],
+        batch_action2d[:, 1],
+    ] = 1
 
     # Get adjacent location and check whether the piece will be surrounded by opponent's piece
-    batch_adj_locs, batch_surrounded = state_utils.batch_adj_data(batch_states[batch_non_pass], batch_action2d,
-                                                                  batch_non_pass_players)
+    batch_adj_locs, batch_surrounded = state_utils.batch_adj_data(
+        batch_states[batch_non_pass], batch_action2d, batch_non_pass_players
+    )
 
     # Update pieces
-    batch_killed_groups = state_utils.batch_update_pieces(batch_non_pass, batch_states, batch_adj_locs,
-                                                          batch_non_pass_players)
+    batch_killed_groups = state_utils.batch_update_pieces(
+        batch_non_pass, batch_states, batch_adj_locs, batch_non_pass_players
+    )
 
     # Ko-protection
-    for i, (killed_groups, surrounded) in enumerate(zip(batch_killed_groups, batch_surrounded)):
+    for i, (killed_groups, surrounded) in enumerate(
+        zip(batch_killed_groups, batch_surrounded)
+    ):
         # If only killed one group, and that one group was one piece, and piece set is surrounded,
         # activate ko protection
         if len(killed_groups) == 1 and surrounded:
@@ -142,8 +173,9 @@ def batch_next_states(batch_states, batch_action1d, canonical=False):
                 batch_ko_protect[batch_non_pass[i]] = killed_group[0]
 
     # Update invalid moves
-    batch_states[:, govars.INVD_CHNL] = state_utils.batch_compute_invalid_moves(batch_states, batch_players,
-                                                                                batch_ko_protect)
+    batch_states[:, govars.INVD_CHNL] = state_utils.batch_compute_invalid_moves(
+        batch_states, batch_players, batch_ko_protect
+    )
 
     # Switch turn
     state_utils.batch_set_turn(batch_states)
@@ -169,7 +201,9 @@ def valid_moves(state):
 def batch_invalid_moves(batch_state):
     n = len(batch_state)
     batch_invalid_moves_bool = batch_state[:, govars.INVD_CHNL].reshape(n, -1)
-    batch_invalid_moves_bool = np.append(batch_invalid_moves_bool, np.zeros((n, 1)), axis=1)
+    batch_invalid_moves_bool = np.append(
+        batch_invalid_moves_bool, np.zeros((n, 1)), axis=1
+    )
     return batch_invalid_moves_bool
 
 
@@ -198,7 +232,7 @@ def action_size(state=None, board_size: int = None):
     elif board_size is not None:
         m, n = board_size, board_size
     else:
-        raise RuntimeError('No argument passed')
+        raise RuntimeError("No argument passed")
     return m * n + 1
 
 
@@ -250,8 +284,10 @@ def turn(state):
     """
     return int(np.max(state[govars.TURN_CHNL]))
 
+
 def turn_pm(state):
     return 1 if turn(state) == govars.BLACK else -1
+
 
 def batch_turn(batch_state):
     return np.max(batch_state[:, govars.TURN_CHNL], axis=(1, 2)).astype(np.int32)
@@ -280,9 +316,9 @@ def num_liberties(state: np.ndarray):
 
 
 def areas(state):
-    '''
+    """
     Return black area, white area
-    '''
+    """
 
     all_pieces = np.sum(state[[govars.BLACK, govars.WHITE]], axis=0)
     empties = 1 - all_pieces
@@ -395,7 +431,7 @@ def random_weighted_action(move_weights):
     Action is 1D
     Expected shape is (NUM OF MOVES, )
     """
-    move_weights = preprocessing.normalize(move_weights[np.newaxis], norm='l1')
+    move_weights = preprocessing.normalize(move_weights[np.newaxis], norm="l1")
     return np.random.choice(np.arange(len(move_weights[0])), p=move_weights[0])
 
 
@@ -412,64 +448,68 @@ def random_action(state):
 
 
 def str(state):
-    board_str = ''
+    board_str = ""
 
     size = state.shape[1]
-    board_str += '\t'
+    board_str += "\t"
     for i in range(size):
-        board_str += '{}'.format(i).ljust(2, ' ')
-    board_str += '\n'
+        board_str += "{}".format(i).ljust(2, " ")
+    board_str += "\n"
     for i in range(size):
-        board_str += '{}\t'.format(i)
+        board_str += "{}\t".format(i)
         for j in range(size):
             if state[0, i, j] == 1:
-                board_str += '○'
+                board_str += "○"
                 if j != size - 1:
                     if i == 0 or i == size - 1:
-                        board_str += '═'
+                        board_str += "═"
                     else:
-                        board_str += '─'
+                        board_str += "─"
             elif state[1, i, j] == 1:
-                board_str += '●'
+                board_str += "●"
                 if j != size - 1:
                     if i == 0 or i == size - 1:
-                        board_str += '═'
+                        board_str += "═"
                     else:
-                        board_str += '─'
+                        board_str += "─"
             else:
                 if i == 0:
                     if j == 0:
-                        board_str += '╔═'
+                        board_str += "╔═"
                     elif j == size - 1:
-                        board_str += '╗'
+                        board_str += "╗"
                     else:
-                        board_str += '╤═'
+                        board_str += "╤═"
                 elif i == size - 1:
                     if j == 0:
-                        board_str += '╚═'
+                        board_str += "╚═"
                     elif j == size - 1:
-                        board_str += '╝'
+                        board_str += "╝"
                     else:
-                        board_str += '╧═'
+                        board_str += "╧═"
                 else:
                     if j == 0:
-                        board_str += '╟─'
+                        board_str += "╟─"
                     elif j == size - 1:
-                        board_str += '╢'
+                        board_str += "╢"
                     else:
-                        board_str += '┼─'
-        board_str += '\n'
+                        board_str += "┼─"
+        board_str += "\n"
 
     black_area, white_area = areas(state)
     done = game_ended(state)
     ppp = prev_player_passed(state)
     t = turn(state)
     if done:
-        game_state = 'END'
+        game_state = "END"
     elif ppp:
-        game_state = 'PASSED'
+        game_state = "PASSED"
     else:
-        game_state = 'ONGOING'
-    board_str += '\tTurn: {}, Game State (ONGOING|PASSED|END): {}\n'.format('BLACK' if t == 0 else 'WHITE', game_state)
-    board_str += '\tBlack Area: {}, White Area: {}\n'.format(int(black_area), int(white_area))
+        game_state = "ONGOING"
+    board_str += "\tTurn: {}, Game State (ONGOING|PASSED|END): {}\n".format(
+        "BLACK" if t == 0 else "WHITE", game_state
+    )
+    board_str += "\tBlack Area: {}, White Area: {}\n".format(
+        int(black_area), int(white_area)
+    )
     return board_str
