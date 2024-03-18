@@ -18,7 +18,7 @@ import os
 import uuid
 import logging
 from dataclasses import dataclass, field
-from queue import PriorityQueue
+from queue import PriorityQueue, Empty
 from random import randint
 from typing import Union
 
@@ -178,9 +178,11 @@ class DataBroker(object):
         states = []
         values = []
         policies = []
+        count = 0
         for _ in range(batch_size):
-            data = self.replay_buffer.get()
-            if data is None:
+            try:
+                data = self.replay_buffer.get(block=False)
+            except Empty:  # python can be so gross sometimes
                 break
             states.append(data.state)
             values.append(data.value)
@@ -188,12 +190,13 @@ class DataBroker(object):
             if refill:
                 data.priority += HIGH_PRIORITY  # put at the end of the queue
                 self.replay_buffer.put(data)
+            count += 1
 
         states = np.stack(states)
         values = np.stack(values)
         policies = np.stack(policies)
 
-        batch = TrainingBatch(batch_size, states, values, policies)
+        batch = TrainingBatch(count, states, values, policies)
         return batch
 
     def load_from_disk(self):
@@ -264,9 +267,7 @@ class DataBroker(object):
                         self.socket.send_multipart([address, b"", batch.pack()])
                     else:
                         self.socket.send_multipart([address, b"", b""])
-                    logger.debug("Sending batch request")
                 else:
-                    print("Received data, processing...")
                     self.process_data(message)
                     self.socket.send_multipart([address, b"", b""])
             except zmq.error.Again:
@@ -285,46 +286,47 @@ class DataBroker(object):
 class DataGameClientMixin:
     """Client for a GameGenerator to interact with the Databroker"""
 
-    def __init__(self, port: int = 7878):
+    def __init__(self, args: dict):
         identity = f"GAME-{uuid.uuid4()}".encode()
-        self.context = zmq.Context.instance()
-        self.socket = self.context.socket(zmq.REQ)
-        self.socket.setsockopt(zmq.IDENTITY, identity)
-        self.socket.connect(f"tcp://localhost:{port}")
+        self.data_context = zmq.Context.instance()
+        self.data_socket = self.data_context.socket(zmq.REQ)
+        self.data_socket.setsockopt(zmq.IDENTITY, identity)
+        self.data_socket.connect(f"tcp://localhost:{args.databroker_port}")
 
     def deposit(self, example: TrainState):
         """Deposits a single training example into the data broker"""
-        self.socket.send(example.pack())
+        self.data_socket.send(example.pack())
+        _ = self.data_socket.recv()
 
     def destroy(self):
         """Sanely shuts down the zmq client"""
-        self.socket.close()
-        self.context.term()
+        self.data_socket.close()
+        self.data_context.term()
         print("DataTrainClient closed")
 
 
 class DataTrainClientMixin:
     """Client for a Trainer to interact with the Databroker"""
 
-    def __init__(self, port: int = 7878, batch_size: int = 32):
-        self.batch_size = batch_size
+    def __init__(self, args: dict):
+        self.batch_size = args.training_batch_size
         identity = f"TRAIN-{uuid.uuid4()}".encode()
-        self.context = zmq.Context.instance()
-        self.socket = self.context.socket(zmq.REQ)
-        self.socket.setsockopt(zmq.IDENTITY, identity)
-        self.socket.connect(f"tcp://localhost:{port}")
+        self.data_context = zmq.Context.instance()
+        self.data_socket = self.data_context.socket(zmq.REQ)
+        self.data_socket.setsockopt(zmq.IDENTITY, identity)
+        self.data_socket.connect(f"tcp://localhost:{args.databroker_port}")
 
     def get_batch(
         self,
     ) -> Union[TrainingBatch, None]:
         """Returns a TrainingBatch from the data broker"""
-        self.socket.send(msgpack.packb(self.batch_size))
-        return TrainingBatch.unpack(self.socket.recv())
+        self.data_socket.send(msgpack.packb(self.batch_size))
+        return TrainingBatch.unpack(self.data_socket.recv())
 
     def destroy(self):
         """Sanely shuts down the zmq client"""
-        self.socket.close()
-        self.context.term()
+        self.data_socket.close()
+        self.data_context.term()
         print("DataTrainClient closed")
 
 
@@ -357,7 +359,9 @@ class KataGoDataClient(DataGameClientMixin):
         values = data["globalTargetsNC"].astype(DATA_DTYPE)
 
         for s, v, p in zip(states, values, policies):
-            yield TrainState(s, v[0] * 2 - 1, p[0])
+            value = (v[0] * 2 - 1).astype(DATA_DTYPE)
+            out = TrainState(s, value, p[0])
+            yield out
 
     def run(self, file_path: str):
         """
@@ -367,11 +371,8 @@ class KataGoDataClient(DataGameClientMixin):
         Args:
             file_path (str): Path to the KataGo game file
         """
-        print(self.socket)
         for file in os.listdir(file_path):
             if file.endswith(".npz"):
                 fp = os.path.join(file_path, file)
                 for example in self.read_game(fp):
-                    print("Depositing example")
                     self.deposit(example)
-                    _ = self.socket.recv()
