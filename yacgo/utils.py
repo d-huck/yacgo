@@ -181,7 +181,7 @@ def make_args():
         "--num_feature_channels",
         "-fc",
         type=int,
-        default=12,
+        default=22,
         help="Number of feature channels for the model",
     )
     parser.add_argument(
