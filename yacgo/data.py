@@ -18,20 +18,54 @@ import os
 import uuid
 from dataclasses import dataclass, field
 from queue import PriorityQueue
-from typing import Union
 from random import randint
+from typing import Union
 
 import msgpack
 import numpy as np
 import zmq
 
-from yacgo.train_utils import TrainState
 from yacgo.utils import DATA_DTYPE
 
 DEPOSIT = 0
 HIGH_PRIORITY = 50
 TRAINING_BATCH = 1
 QUIT = -1
+
+
+@dataclass
+class TrainState:
+    state: np.ndarray
+    value: np.float32
+    policy: np.ndarray
+
+    def pack(self) -> bytearray:
+        """Packs the TrainState into a zmq message.
+
+        Returns:
+            bytearray: message for zmq
+        """
+        s = (self.state.shape, self.state.tobytes())
+        v = (self.value.shape, self.value.tobytes())
+        p = (self.policy.shape, self.policy.tobytes())
+
+        return msgpack.packb((s, v, p))
+
+    @classmethod
+    def unpack(cls, message: bytearray) -> "TrainState":
+        """Create a TrainState from a zmq message.
+
+        Args:
+            message (bytearray): message from zmq
+
+        Returns:
+            TrainState: with information from the message
+        """
+        s, v, p = msgpack.unpackb(message)
+        state = np.frombuffer(s[1], np.float32).reshape(s[0])
+        value = np.frombuffer(v[1], np.float32).reshape(v[0])
+        policy = np.frombuffer(p[1], np.float32).reshape(p[0])
+        return cls(state, value, policy)
 
 
 @dataclass

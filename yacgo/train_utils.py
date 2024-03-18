@@ -1,49 +1,17 @@
+"""
+Utils for training and evaluating models. 
+"""
+
 from dataclasses import dataclass
 from typing import List, Tuple
 
-import msgpack
 import numpy as np
 
 from yacgo.algos.mcts import MCTSSearch
+from yacgo.data import TrainState
 from yacgo.game import Game
 from yacgo.go import game, govars
 from yacgo.player import MCTSPlayer, RandomPlayer
-
-
-# TODO: Could this all just be put into game.py and utils.py?
-@dataclass
-class TrainState:
-    state: np.ndarray
-    value: np.float32
-    policy: np.ndarray
-
-    def pack(self) -> bytearray:
-        """Packs the TrainState into a zmq message.
-
-        Returns:
-            bytearray: message for zmq
-        """
-        s = (self.state.shape, self.state.tobytes())
-        v = (self.value.shape, self.value.tobytes())
-        p = (self.policy.shape, self.policy.tobytes())
-
-        return msgpack.packb((s, v, p))
-
-    @classmethod
-    def unpack(cls, message: bytearray) -> "TrainState":
-        """Create a TrainState from a zmq message.
-
-        Args:
-            message (bytearray): message from zmq
-
-        Returns:
-            TrainState: with information from the message
-        """
-        s, v, p = msgpack.unpackb(message)
-        state = np.frombuffer(s[1], np.float32).reshape(s[0])
-        value = np.frombuffer(v[1], np.float32).reshape(v[0])
-        policy = np.frombuffer(p[1], np.float32).reshape(p[0])
-        return cls(state, value, policy)
 
 
 class GameGenerator:
