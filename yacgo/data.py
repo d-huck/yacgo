@@ -36,13 +36,19 @@ QUIT = -1
 logger = logging.getLogger(__name__)
 
 
-@dataclass
 class TrainState:
     """Dataclass for a single training example. Contains a state, value, and policy."""
 
-    state: np.ndarray
-    value: np.float32
-    policy: np.ndarray
+    def __init__(self, state: np.ndarray, value: np.float32, policy: np.ndarray):
+        if len(value.shape) == 0:
+            value = value.astype(DATA_DTYPE)
+        elif len(value.shape) == 1 and value.shape[0] == 1:
+            value = value[0].astype(DATA_DTYPE)
+        else:
+            raise ValueError("Value must be a single number")
+        self.state = state
+        self.value = value
+        self.policy = policy
 
     def pack(self) -> bytearray:
         """Packs the TrainState into a zmq message.
@@ -145,12 +151,18 @@ class State:
         return cls(state)
 
 
-@dataclass
 class Inference:
     """Simple data class to hold inferences from inference server"""
 
-    value: np.float32
-    policy: np.ndarray
+    def __init__(self, value: Union[DATA_DTYPE, np.ndarray], policy: np.ndarray):
+        if len(value.shape) == 0:
+            value = value.astype(DATA_DTYPE)
+        elif len(value.shape) == 1 and value.shape[0] == 1:
+            value = value[0].astype(DATA_DTYPE)
+        else:
+            raise ValueError("Value must be a single number")
+        self.value = value.copy()
+        self.policy = policy.copy()
 
     def pack(self) -> bytearray:
         """Packs the inference into a zmq message
@@ -175,9 +187,12 @@ class Inference:
             Inference
         """
         v, p = msgpack.unpackb(message)
-        value = np.frombuffer(v[1], DATA_DTYPE).reshape(v[0])[
-            0
-        ]  # ensure value is single number
+        if len(v[0]) == 0:
+            value = np.frombuffer(v[1], DATA_DTYPE)
+        else:
+            value = np.frombuffer(v[1], DATA_DTYPE).reshape(v[0])[
+                0
+            ]  # ensure value is single number
         policy = np.frombuffer(p[1], DATA_DTYPE).reshape(p[0])
 
         return cls(value, policy)
