@@ -12,9 +12,8 @@ import numpy as np
 import torch
 import zmq
 
-from yacgo.data import DataTrainClientMixin
+from yacgo.data import DataTrainClientMixin, State, Inference
 from yacgo.go import game
-from yacgo.utils import pack_inference, pack_state, unpack_inference, unpack_state
 from yacgo.vit import (
     EfficientFormer_depth,
     EfficientFormer_expansion_ratios,
@@ -156,8 +155,9 @@ class InferenceClient(Model):
         Returns:
             _type_: _description_
         """
-        self.socket.send(pack_state(inputs))
-        return unpack_inference(self.socket.recv())
+        state = State(inputs)
+        self.socket.send(state.pack())
+        return Inference.unpack(self.socket.recv())
 
 
 class InferenceServer(ViTWrapper):
@@ -200,6 +200,7 @@ class InferenceServer(ViTWrapper):
         return value, policy
 
     def loop(self):
+        """main loop for the server. Expects to receive a batch of inputs and returns inference to the appropriate address."""
         addresses = []
         inputs = np.empty(
             (
@@ -216,7 +217,8 @@ class InferenceServer(ViTWrapper):
                 address, _, buffer = self.socket.recv_multipart()
             except zmq.error.Again:
                 continue
-            inputs[n] = unpack_state(buffer)
+            state = State.unpack(buffer)
+            inputs[n] = state.state
             addresses.append(address)
             n += 1
         # only respond if there is someone to return to. Ignores the case
@@ -224,10 +226,9 @@ class InferenceServer(ViTWrapper):
         if n > 0:
             inputs = np.copy(inputs[:n])
             value, policy = self.inference(inputs)
+            inf = Inference(value, policy)
             for i, address in enumerate(addresses):
-                self.socket.send_multipart(
-                    [address, b"", pack_inference(value[i], policy[i])]
-                )
+                self.socket.send_multipart([address, b"", inf.pack()])
 
     def run(self):
         """
