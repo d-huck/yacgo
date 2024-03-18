@@ -282,7 +282,7 @@ class DataBroker(object):
         print("DataBroker closed")
 
 
-class DataClient:
+class DataGameClientMixin:
     """Client for a GameGenerator to interact with the Databroker"""
 
     def __init__(self, port: int = 7878):
@@ -303,7 +303,7 @@ class DataClient:
         print("DataTrainClient closed")
 
 
-class DataTrainClient:
+class DataTrainClientMixin:
     """Client for a Trainer to interact with the Databroker"""
 
     def __init__(self, port: int = 7878, batch_size: int = 32):
@@ -328,7 +328,7 @@ class DataTrainClient:
         print("DataTrainClient closed")
 
 
-class KataGoDataClient(DataClient):
+class KataGoDataClient(DataGameClientMixin):
     """
     DataClient that reads KataGo game files from disks and deposits them to the
     DataBroker
