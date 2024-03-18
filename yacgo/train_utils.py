@@ -11,13 +11,23 @@ from yacgo.algos.mcts import MCTSSearch
 from yacgo.data import TrainState
 from yacgo.game import Game
 from yacgo.go import game, govars
+from yacgo.data import DataGameClientMixin
 from yacgo.player import MCTSPlayer, RandomPlayer
+from yacgo.models import Model
 
 
-class GameGenerator:
+class GameGenerator(DataGameClientMixin):
     def __init__(
-        self, board_size, model, komi=0, pcap_train=400, pcap_fast=100, pcap_prob=0.25
+        self,
+        board_size,
+        model: Model,
+        args: dict,
+        komi=0,
+        pcap_train=400,
+        pcap_fast=100,
+        pcap_prob=0.25,
     ):
+        super().__init__(args)
         self.board_size = board_size
         self.model = model
         self.komi = komi
@@ -45,6 +55,7 @@ class GameGenerator:
         winner = game.winning(state)
         for d in data:
             d.value = winner * game.turn_pm(d.state)
+            self.deposit(d)
 
         return data
 
