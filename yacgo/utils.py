@@ -74,10 +74,9 @@ def unpack_inference(message: bytearray) -> Tuple[np.ndarray, np.ndarray]:
         shapes (bs, ) and (bs, board_size ** 2 + 1)
     """
     v, p = msgpack.unpackb(message)
-    values = np.frombuffer(v[1], DATA_DTYPE)
+    values = np.frombuffer(v[1], DATA_DTYPE).reshape(v[0])[0]
     policies = np.frombuffer(p[1], DATA_DTYPE).reshape(p[0])
-
-    return (values, policies)
+    return values, policies
 
 
 def pack_examples(
@@ -159,6 +158,10 @@ def make_args():
     parser.add_argument(
         "--num_servers", type=int, default=2, help="Number of inference servers to use"
     )
+
+    parser.add_argument(
+        "--num_games", type=int, default=4, help="Number of games to play"
+    )
     parser.add_argument(
         "--inference_server_port",
         type=int,
@@ -174,14 +177,12 @@ def make_args():
         default=6000,
         help="Port for the databroker server. Defaults to 6000",
     )
-    parser.add_argument(
-        "--num_games", type=int, default=128, help="Number of games to play"
-    )
+
     parser.add_argument(
         "--num_feature_channels",
         "-fc",
         type=int,
-        default=22,
+        default=6,
         help="Number of feature channels for the model",
     )
     parser.add_argument(
