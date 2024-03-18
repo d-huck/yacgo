@@ -109,10 +109,78 @@ class TrainingBatch:
             TrainingBatch: with information from the message
         """
         s, v, p = msgpack.unpackb(message)
-        states = np.frombuffer(s[1], np.float32).reshape(s[0])
-        values = np.frombuffer(v[1], np.float32).reshape(v[0])
-        policies = np.frombuffer(p[1], np.float32).reshape(p[0])
+        states = np.frombuffer(s[1], DATA_DTYPE).reshape(s[0])
+        values = np.frombuffer(v[1], DATA_DTYPE).reshape(v[0])
+        policies = np.frombuffer(p[1], DATA_DTYPE).reshape(p[0])
         return cls(states.shape[0], states, values, policies)
+
+
+@dataclass
+class State:
+    """Simple data class to hold state from gameplay"""
+
+    state: np.ndarray
+
+    def pack(self) -> bytearray:
+        """Packs the state into zmq message
+
+        Returns:
+            bytearray: message for zmq
+        """
+        s = (self.state.shape, self.state.tobytes())
+        return msgpack.packb(s)
+
+    @classmethod
+    def unpack(cls, message: bytearray) -> "State":
+        """Unpack the state into State object
+
+        Args:
+            message (bytearray): incoming message from zmq
+
+        Returns:
+            State
+        """
+        s = msgpack.unpackb(message)
+        state = np.frombuffer(s[1], DATA_DTYPE).reshape(s[0])
+        return cls(state)
+
+
+@dataclass
+class Inference:
+    """Simple data class to hold inferences from inference server"""
+
+    value: np.float32
+    policy: np.ndarray
+
+    def pack(self) -> bytearray:
+        """Packs the inference into a zmq message
+
+        Returns:
+            bytearray: message for zmq
+        """
+        v = (self.value.shape, self.value.tobytes())
+        p = (self.policy.shape, self.policy.tobytes())
+
+        return msgpack.packb((v, p))
+
+    @classmethod
+    def unpack(cls, message: bytearray) -> "Inference":
+        """Unpacks a message from zmq and constructs an Inference class containing
+        the information
+
+        Args:
+            message (bytearray): incoming message
+
+        Returns:
+            Inference
+        """
+        v, p = msgpack.unpackb(message)
+        value = np.frombuffer(v[1], DATA_DTYPE).reshape(v[0])[
+            0
+        ]  # ensure value is single number
+        policy = np.frombuffer(p[1], DATA_DTYPE).reshape(p[0])
+
+        return cls(value, policy)
 
 
 @dataclass(order=True)
