@@ -12,7 +12,7 @@ import numpy as np
 import torch
 import zmq
 
-from yacgo.data import DataTrainClient
+from yacgo.data import DataTrainClientMixin
 from yacgo.go import game
 from yacgo.utils import pack_inference, pack_state, unpack_inference, unpack_state
 from yacgo.vit import (
@@ -49,7 +49,6 @@ class ViTWrapper(object):
     """
 
     def __init__(self, args: dict):
-
         depths = EfficientFormer_depth[args.model_size]
         embed_dims = EfficientFormer_width[args.model_size]
         mlp_ratios = EfficientFormer_expansion_ratios[args.model_size]
@@ -234,8 +233,6 @@ class InferenceServer(ViTWrapper):
         """
         Runs the server indefinitely. Expects to receive a batch of inputs and
         returns inference to the appropriate address.
-
-        TODO: Add a way to stop the server
         """
         while True:
             try:
@@ -246,19 +243,19 @@ class InferenceServer(ViTWrapper):
         self.context.destroy()
 
 
-class Trainer(ViTWrapper):  # TODO: implement training
+class Trainer(ViTWrapper, DataTrainClientMixin):
     """
     Implements a trainer thread to continuously take in game states and train the model.
     """
 
     def __init__(self, args: dict):
-        super().__init__(args)
+        super(Trainer, self).__init__(args)
+        DataTrainClientMixin.__init__(self, args)
+
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-4)
         self.criterion = torch.nn.CrossEntropyLoss()
         self.regressor = torch.nn.MSELoss()
-        self.batch_size = args.training_batch_size
         self.training_steps = 500_000  #
-        self.dataset = DataTrainClient(args.databroker_port, self.batch_size)
         self.model.train()
 
     def train_step(
@@ -275,9 +272,9 @@ class Trainer(ViTWrapper):  # TODO: implement training
         Returns:
             torch.float32: loss of the training step
         """
-        states = states.to(self.device)
-        values = values.to(self.device)
-        policies = policies.to(self.device)
+        states = torch.tensor(states).to(self.device)
+        values = torch.tensor(values).to(self.device)
+        policies = torch.tensor(policies).to(self.device)
         self.optimizer.zero_grad()
         values_pred, policy_pred = self.model.forward(states)
         loss = 0.5 * self.criterion(
@@ -297,7 +294,7 @@ class Trainer(ViTWrapper):  # TODO: implement training
         losses = []
         try:
             for i in range(self.training_steps):
-                batch = self.dataset.get_batch()
+                batch = self.get_batch()
                 if batch.batch_size == 0:
                     print("Empty Batch, sleeping...")
                     time.sleep(5)
@@ -305,10 +302,10 @@ class Trainer(ViTWrapper):  # TODO: implement training
                 loss = self.train_step(batch.states, batch.policies, batch.values)
                 losses.append(loss)
                 avg = sum(losses) / len(losses)
-                print(f"Training Step {i}, Loss : {avg}")
+                print(f"Training Step {i:06,d}, Loss : {avg:04.4f}", end="\r")
                 if len(losses) > 10:
                     _ = losses.pop(0)
         except KeyboardInterrupt:
             pass
-        self.dataset.destroy()
+        self.destroy()
         print("Trainer has quit")
