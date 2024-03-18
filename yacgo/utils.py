@@ -45,6 +45,7 @@ def unpack_state(message: bytearray) -> np.ndarray:
     return np.frombuffer(state, DATA_DTYPE).reshape(shape)
 
 
+# TODO: make Inference and State data classes
 def pack_inference(values: np.ndarray, policies: np.ndarray) -> bytearray:
     """
     Packs inference results for transmission across zmq sockets
