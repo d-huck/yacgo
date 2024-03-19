@@ -12,7 +12,7 @@ import numpy as np
 import torch
 import zmq
 
-from yacgo.data import DataTrainClientMixin, State, Inference
+from yacgo.data import DataTrainClientMixin, State, Inference, TrainState
 from yacgo.go import game
 from yacgo.vit import (
     EfficientFormer_depth,
@@ -27,10 +27,10 @@ class Model(object):
     Basic API for model interaction.
     """
 
-    def __call__(self, inputs):
+    def __call__(self, inputs: TrainState) -> Tuple[np.float32, np.ndarray]:
         self.forward(inputs)
 
-    def forward(self, inputs):
+    def forward(self, inputs: TrainState) -> Tuple[np.float32, np.ndarray]:
         """Abstract class for unified forward method
 
         Args:
@@ -43,7 +43,8 @@ class Model(object):
 
 
 class ViTWrapper(object):
-    """Simple wrapper around EfficientFormerV2 to keep the implementation as close
+    """
+    Simple wrapper around EfficientFormerV2 to keep the implementation as close
     to the original as possible. Handles construction, saving and loading of weights.
     """
 
@@ -161,7 +162,8 @@ class InferenceClient(Model):
         """
         state = State(inputs)
         self.socket.send(state.pack())
-        return Inference.unpack(self.socket.recv())
+        inf = Inference.unpack(self.socket.recv())
+        return inf.value, inf.policy
 
 
 class InferenceServer(ViTWrapper):
@@ -172,15 +174,18 @@ class InferenceServer(ViTWrapper):
         ViTWrapper (_type_): _description_
     """
 
-    def __init__(self, port: int, args: dict):
+    def __init__(self, port, args: dict):
         super().__init__(args)
 
         self.model.eval()
+        self.port = port
         self.context = zmq.Context.instance()
         self.socket = self.context.socket(zmq.ROUTER)
-        self.socket.bind(f"tcp://*:{port}")
+        self.socket.bind(f"tcp://*:{self.port}")
         self.socket.setsockopt(zmq.LINGER, 0)
-        self.socket.setsockopt(zmq.RCVTIMEO, 1)  # TODO: compare with immediate time out
+
+        # TODO: compare with immediate time out
+        self.socket.setsockopt(zmq.RCVTIMEO, 1)
 
         self.batch_size = args.inference_batch_size
         self.n_chans = args.num_feature_channels
@@ -233,8 +238,8 @@ class InferenceServer(ViTWrapper):
         if n > 0:
             inputs = np.copy(inputs[:n])
             value, policy = self.inference(inputs)
-            inf = Inference(value, policy)
-            for _, address in enumerate(addresses):
+            for i, address in enumerate(addresses):
+                inf = Inference(value[i], policy[i])
                 self.socket.send_multipart([address, b"", inf.pack()])
 
     def run(self):
@@ -263,7 +268,7 @@ class Trainer(ViTWrapper, DataTrainClientMixin):
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-4)
         self.criterion = torch.nn.CrossEntropyLoss()
         self.regressor = torch.nn.MSELoss()
-        self.training_steps = 500_000  #
+        self.training_steps = args.training_steps_per_epoch
         self.model.train()
 
     def train_step(
@@ -317,3 +322,29 @@ class Trainer(ViTWrapper, DataTrainClientMixin):
             pass
         self.destroy()
         print("Trainer has quit")
+
+
+class ModelServerMixin:
+    """Model Server to distribute weights of the most up to date model"""
+
+    def __init__(self, args):
+        self.address = (
+            "*" if args.model_server_address is None else args.model_server_address
+        )
+        self.port = args.model_server_port
+        self.context = zmq.Context.instance()
+        self.socket = self.context.socket(zmq.REP)
+        self.socket.bind(f"tcp://*:{self.port}")
+        self.publisher = self.context.socket(zmq.PUB)
+        self.publisher.bind(f"tcp://*:{self.port + 1}")
+
+
+class ModelClientMixin:
+    """Model client to receive weights from the model server"""
+
+    def __init__(self, address: str, port: int):
+        self.context = zmq.Context.instance()
+        self.socket = self.context.socket(zmq.REQ)
+        self.socket.connect(f"tcp://{address}:{port}")
+        self.subscriber = self.context.socket(zmq.SUB)
+        self.subscriber.connect(f"tcp://{address}:{port + 1}")
