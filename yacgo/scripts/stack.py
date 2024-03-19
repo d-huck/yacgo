@@ -4,7 +4,7 @@ Runs the entire yacgo stack: 1 Trainer, 1 DataBroker, n InferenceServers, k Game
 
 from multiprocessing import Process
 
-from yacgo.data import DataBroker, DataGameClient
+from yacgo.data import DataBroker, DataGameClientMixin
 from yacgo.models import InferenceClient, InferenceServer, Trainer
 from yacgo.train_utils import GameGenerator
 from yacgo.utils import make_args
@@ -29,7 +29,7 @@ def databroker_worker(args):
         port (int): Port server is listening on.
         args (dict): args dict.
     """
-    broker = DataBroker(args.databroker_port)
+    broker = DataBroker(args)
     print("Starting databroker...")
     broker.run()
 
@@ -53,10 +53,10 @@ def gameplay_worker(ports, args):
         args (dict): args dict.
     """
     model = InferenceClient(ports)
-    data_client = DataGameClient(args)
+    data_client = DataGameClientMixin(args)
     game_gen = GameGenerator(
-        args.board_size,
         model,
+        args,
     )
     print("Starting Game Generation...")
     data = game_gen.sim_data(1024)

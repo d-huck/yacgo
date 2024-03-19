@@ -26,7 +26,7 @@ def databroker_worker(args):
         port (int): Port server is listening on.
         args (dict): args dict.
     """
-    broker = DataBroker(args.databroker_port)
+    broker = DataBroker(args)
     print("Starting databroker...")
     broker.run()
 

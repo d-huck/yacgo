@@ -18,14 +18,14 @@ def gameplay_worker(ports, args):
     """
     model = InferenceClient(ports)
     data_client = DataGameClientMixin(args)
-    game_gen = GameGenerator(args.board_size, model, args)
+    game_gen = GameGenerator(model, args)
     print("Starting Game Generation...")
     data = game_gen.sim_data(1024)
     for d in data:
         data_client.deposit(d)
     while True:
         data = game_gen.sim_game()
-
+        print("Game finished!")
         for d in data:
             data_client.deposit(d)
 

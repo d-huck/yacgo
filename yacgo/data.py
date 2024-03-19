@@ -237,7 +237,7 @@ class DataBroker(object):
         self.max_size = args.replay_buffer_size
         self.port = args.databroker_port
         self.replay_buffer = PriorityQueue()
-        self.cache_dir = args.cache_dir
+        self.cache_dir = args.data_cache_dir
         self.context = zmq.Context.instance()
         self.socket = self.context.socket(zmq.ROUTER)
         self.socket.bind(f"tcp://*:{self.port}")
