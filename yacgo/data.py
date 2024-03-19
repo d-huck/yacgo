@@ -14,24 +14,26 @@ request a batch of data from the replay buffer. The expected message should be
 the same as above.
 """
 
+import logging
 import os
 import uuid
-import logging
 from dataclasses import dataclass, field
-from queue import PriorityQueue, Empty
+from queue import Empty, PriorityQueue
 from random import randint
 from typing import Union
 
 import msgpack
 import numpy as np
+import torch
 import zmq
-
-from yacgo.utils import DATA_DTYPE
 
 DEPOSIT = 0
 HIGH_PRIORITY = 50
 TRAINING_BATCH = 1
 QUIT = -1
+
+DATA_DTYPE = np.float32  # pylint: disable=C0103
+TORCH_DTYPE = torch.float32
 
 logger = logging.getLogger(__name__)
 
@@ -41,15 +43,19 @@ class TrainState:
     """Dataclass for a single training example. Contains a state, value, and policy."""
 
     def __init__(self, state: np.ndarray, value: np.float32, policy: np.ndarray):
+        if isinstance(value, (int, float)):
+            value = DATA_DTYPE(value)
+        elif isinstance(value, list):
+            value = np.array(value, dtype=DATA_DTYPE)
         if len(value.shape) == 0:
             value = value.astype(DATA_DTYPE)
         elif len(value.shape) == 1 and value.shape[0] == 1:
             value = value[0].astype(DATA_DTYPE)
         else:
             raise ValueError("Value must be a single number")
-        self.state = state
-        self.value = value
-        self.policy = policy
+        self.state = state.astype(DATA_DTYPE).copy()
+        self.value = value.astype(DATA_DTYPE).copy()
+        self.policy = policy.astype(DATA_DTYPE).copy()
 
     def pack(self) -> bytearray:
         """Packs the TrainState into a zmq message.
@@ -332,6 +338,7 @@ class DataBroker(object):
         example = TrainState.unpack(message)
         data = PrioritizedTrainState.from_train_state(example)
         self.replay_buffer.put(data)
+        print("Processed data: Buffer size: ", self.replay_buffer.qsize(), end="\r")
 
     def run(self):
         """
