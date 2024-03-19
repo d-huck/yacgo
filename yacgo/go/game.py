@@ -1,10 +1,3 @@
-import numpy as np
-from scipy import ndimage
-from sklearn import preprocessing
-
-from yacgo.go import state_utils, govars
-from yacgo.data import DATA_DTYPE
-
 """
 The state of the game is a numpy array
 * Are values are either 0 or 1
@@ -18,6 +11,14 @@ The state of the game is a numpy array
 4 - Previous move was a pass
 5 - Game over
 """
+
+# pylint: disable=missing-function-docstring,missing-class-docstring
+import numpy as np
+from scipy import ndimage
+from sklearn import preprocessing
+
+from yacgo.data import DATA_DTYPE
+from yacgo.go import govars, state_utils
 
 
 def init_state(size):
@@ -286,7 +287,7 @@ def turn(state):
 
 
 def turn_pm(state):
-    return 1 if turn(state) == govars.BLACK else -1
+    return DATA_DTYPE(1.0) if turn(state) == govars.BLACK else DATA_DTYPE(-1.0)
 
 
 def batch_turn(batch_state):
@@ -447,7 +448,7 @@ def random_action(state):
     return random_weighted_action(move_weights)
 
 
-def str(state):
+def state_to_str(state):
     board_str = ""
 
     size = state.shape[1]
