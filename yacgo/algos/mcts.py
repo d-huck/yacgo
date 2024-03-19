@@ -16,6 +16,7 @@ class MCTSSearch:
         self.action_dim = game.action_size(state)
         self.noise = args.mcts_noise and noise  # consider args option for noise
         self.komi = args.komi
+        self.pcap_fast = args.pcap_fast
         self.sims_run = 0
         if root is None:
             self.root: MCTSNode = MCTSNode(state, parent=None, search=self)
@@ -38,14 +39,14 @@ class MCTSSearch:
             self.sim()
 
     def best_action(self):
-        if self.sims_run < self.root.valid_move_count:
-            raise ValueError(f"# sims must be at least {self.root.valid_move_count}")
+        if self.sims_run < self.pcap_fast:
+            raise ValueError(f"# sims must be at least {self.pcap_fast}")
 
         return np.argmax(self.action_probs())
 
     def action_probs(self):
-        if self.sims_run < self.root.valid_move_count:
-            raise ValueError(f"# sims must be at least {self.root.valid_move_count}")
+        if self.sims_run < self.root.pcap_fast:
+            raise ValueError(f"# sims must be at least {self.pcap_fast}")
 
         scores = [
             c.total_visits / self.root.total_visits if c is not None else -np.inf
