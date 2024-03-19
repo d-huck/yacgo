@@ -36,6 +36,7 @@ QUIT = -1
 logger = logging.getLogger(__name__)
 
 
+@dataclass  # Still use data class to get the extra __repr__ and __eq__ methods for free
 class TrainState:
     """Dataclass for a single training example. Contains a state, value, and policy."""
 
@@ -151,6 +152,7 @@ class State:
         return cls(state)
 
 
+@dataclass
 class Inference:
     """Simple data class to hold inferences from inference server"""
 
@@ -229,20 +231,16 @@ class DataBroker(object):
 
     def __init__(
         self,
-        port: int = 7878,
-        max_size: int = 500_000,
-        min_size: int = 10_000,
-        cache_dir: str = None,
+        args,
     ):
-        self.min_size = min_size
-        self.max_size = max_size
+        self.min_size = args.replay_buffer_min_size
+        self.max_size = args.replay_buffer_size
+        self.port = args.databroker_port
         self.replay_buffer = PriorityQueue()
-        if cache_dir is not None and not cache_dir.endswith("/"):
-            cache_dir += "/"
-        self.cache_dir = cache_dir
+        self.cache_dir = args.cache_dir
         self.context = zmq.Context.instance()
         self.socket = self.context.socket(zmq.ROUTER)
-        self.socket.bind(f"tcp://*:{port}")
+        self.socket.bind(f"tcp://*:{self.port}")
         self.socket.setsockopt(zmq.LINGER, 0)
         self.socket.setsockopt(zmq.RCVTIMEO, 1)
 
