@@ -4,21 +4,16 @@ wrappers around the EfficientFormer and gives extra methods for reloading and
 saving models, as well as interfacing with the ZMQ.
 """
 
+import time
 import uuid
 from typing import Tuple
 
 import numpy as np
 import torch
 import zmq
-import msgpack
 
-from yacgo.utils import (
-    pack_inference,
-    unpack_examples,
-    pack_state,
-    unpack_inference,
-    unpack_state,
-)
+from yacgo.data import DataTrainClientMixin, State, Inference, TrainState
+from yacgo.go import game
 from yacgo.vit import (
     EfficientFormer_depth,
     EfficientFormer_expansion_ratios,
@@ -26,18 +21,16 @@ from yacgo.vit import (
     EfficientFormerV2,
 )
 
-from yacgo.go import game
-
 
 class Model(object):
     """
     Basic API for model interaction.
     """
 
-    def __call__(self, inputs):
+    def __call__(self, inputs: TrainState) -> Tuple[np.float32, np.ndarray]:
         self.forward(inputs)
 
-    def forward(self, inputs):
+    def forward(self, inputs: TrainState) -> Tuple[np.float32, np.ndarray]:
         """Abstract class for unified forward method
 
         Args:
@@ -50,12 +43,12 @@ class Model(object):
 
 
 class ViTWrapper(object):
-    """Simple wrapper around EfficientFormerV2 to keep the implementation as close
+    """
+    Simple wrapper around EfficientFormerV2 to keep the implementation as close
     to the original as possible. Handles construction, saving and loading of weights.
     """
 
     def __init__(self, args: dict):
-
         depths = EfficientFormer_depth[args.model_size]
         embed_dims = EfficientFormer_width[args.model_size]
         mlp_ratios = EfficientFormer_expansion_ratios[args.model_size]
@@ -75,7 +68,7 @@ class ViTWrapper(object):
         self.n_chans = args.num_feature_channels
 
     def __repr__(self):
-        return f"ViTWrapper(model_size={self.model_size}, device={self.device}, board_size={self.board_size}, n_chans={self.n_chans})"
+        return f"ViTWrapper(model_size={self.model_size}, device={self.device}, board_size={self.board_size}, n_chans={self.n_chans})"  # pylint: disable=line-too-long
 
     def load_pretrained(self, path: str):
         """
@@ -106,20 +99,27 @@ class ViTWrapper(object):
         """
         self.model.save_state_dict(path)
 
-class InferenceRandom(Model, ViTWrapper):
+
+class InferenceRandom(Model):
+    """Simple Model interface that returns random values for playing games against"""
+
     def __init__(self):
         pass
 
     def forward(self, inputs):
         return np.random.random(), np.random.random(game.action_size(inputs))
-    
-class InferenceEqual(Model, ViTWrapper):
+
+
+class InferenceEqual(Model):
+    """Simple Model interface that returns equal values for playing games against."""
+
     def __init__(self):
         pass
 
     def forward(self, inputs):
         pol = np.zeros(game.action_size(inputs)) + (1 / game.action_size(inputs))
         return 0, pol
+
 
 class InferenceLocal(Model, ViTWrapper):
     """Simple Model interface that handles inference locally, for playing games against
@@ -160,8 +160,10 @@ class InferenceClient(Model):
         Returns:
             _type_: _description_
         """
-        self.socket.send(pack_state(inputs))
-        return unpack_inference(self.socket.recv())
+        state = State(inputs)
+        self.socket.send(state.pack())
+        inf = Inference.unpack(self.socket.recv())
+        return inf.value, inf.policy
 
 
 class InferenceServer(ViTWrapper):
@@ -172,15 +174,18 @@ class InferenceServer(ViTWrapper):
         ViTWrapper (_type_): _description_
     """
 
-    def __init__(self, port: int, args: dict):
+    def __init__(self, port, args: dict):
         super().__init__(args)
 
         self.model.eval()
+        self.port = port
         self.context = zmq.Context.instance()
         self.socket = self.context.socket(zmq.ROUTER)
-        self.socket.bind(f"tcp://*:{port}")
+        self.socket.bind(f"tcp://*:{self.port}")
         self.socket.setsockopt(zmq.LINGER, 0)
-        self.socket.setsockopt(zmq.RCVTIMEO, 1)  # TODO: compare with immediate time out
+
+        # TODO: compare with immediate time out
+        self.socket.setsockopt(zmq.RCVTIMEO, 1)
 
         self.batch_size = args.inference_batch_size
         self.n_chans = args.num_feature_channels
@@ -204,6 +209,10 @@ class InferenceServer(ViTWrapper):
         return value, policy
 
     def loop(self):
+        """
+        main loop for the server. Expects to receive a batch of inputs and
+        returns inference to the appropriate address.
+        """
         addresses = []
         inputs = np.empty(
             (
@@ -220,7 +229,8 @@ class InferenceServer(ViTWrapper):
                 address, _, buffer = self.socket.recv_multipart()
             except zmq.error.Again:
                 continue
-            inputs[n] = unpack_state(buffer)
+            state = State.unpack(buffer)
+            inputs[n] = state.state
             addresses.append(address)
             n += 1
         # only respond if there is someone to return to. Ignores the case
@@ -229,16 +239,13 @@ class InferenceServer(ViTWrapper):
             inputs = np.copy(inputs[:n])
             value, policy = self.inference(inputs)
             for i, address in enumerate(addresses):
-                self.socket.send_multipart(
-                    [address, b"", pack_inference(value[i], policy[i])]
-                )
+                inf = Inference(value[i], policy[i])
+                self.socket.send_multipart([address, b"", inf.pack()])
 
     def run(self):
         """
         Runs the server indefinitely. Expects to receive a batch of inputs and
         returns inference to the appropriate address.
-
-        TODO: Add a way to stop the server
         """
         while True:
             try:
@@ -249,34 +256,20 @@ class InferenceServer(ViTWrapper):
         self.context.destroy()
 
 
-class Trainer(ViTWrapper):  # TODO: implement training
+class Trainer(ViTWrapper, DataTrainClientMixin):
     """
     Implements a trainer thread to continuously take in game states and train the model.
     """
 
-    def __init__(self, port: int, args: dict, server_address: str = "localhost"):
-        super().__init__(args)
-        identity = f"TRAIN-{uuid.uuid4()}".encode("utf-8")
-        self.context = zmq.Context.instance()
-        self.socket = self.context.socket(zmq.REQ)
-        self.socket.setsockopt(zmq.IDENTITY, identity)
-        self.socket.connect(f"tcp://{server_address}:{port}")
+    def __init__(self, args: dict):
+        super(Trainer, self).__init__(args)
+        DataTrainClientMixin.__init__(self, args)
+
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-4)
         self.criterion = torch.nn.CrossEntropyLoss()
         self.regressor = torch.nn.MSELoss()
-        self.dataset = None  # TODO: implement interfacing with dataset. This is simply a place holder.
-        self.batch_size = args.training_batch_size
-        self.training_steps = 500_000  #
+        self.training_steps = args.training_steps_per_epoch
         self.model.train()
-
-    def get_batch(self):
-        """
-        Get a batch from the dataset
-
-        Returns:
-            _type_: _description_
-        """
-        return
 
     def train_step(
         self, states: torch.Tensor, policies: torch.Tensor, values: torch.Tensor
@@ -292,9 +285,9 @@ class Trainer(ViTWrapper):  # TODO: implement training
         Returns:
             torch.float32: loss of the training step
         """
-        states = states.to(self.device)
-        values = values.to(self.device)
-        policies = policies.to(self.device)
+        states = torch.tensor(states).to(self.device)
+        values = torch.tensor(values).to(self.device)
+        policies = torch.tensor(policies).to(self.device)
         self.optimizer.zero_grad()
         values_pred, policy_pred = self.model.forward(states)
         loss = 0.5 * self.criterion(
@@ -314,15 +307,44 @@ class Trainer(ViTWrapper):  # TODO: implement training
         losses = []
         try:
             for i in range(self.training_steps):
-                self.socket.send(msgpack.packb(self.batch_size))
-                states, values, policies = unpack_examples(self.socket.recv())
-                loss = self.train_step(states, policies, values)
+                batch = self.get_batch()
+                if batch.batch_size == 0:
+                    print("Empty Batch, sleeping...")
+                    time.sleep(5)
+                    continue
+                loss = self.train_step(batch.states, batch.policies, batch.values)
                 losses.append(loss)
                 avg = sum(losses) / len(losses)
-                print(f"Training Step {i}, Loss : {avg}")
+                print(f"Training Step {i:06,d}, Loss : {avg:04.4f}", end="\r")
                 if len(losses) > 10:
                     _ = losses.pop(0)
         except KeyboardInterrupt:
             pass
-        self.context.destroy()
+        self.destroy()
         print("Trainer has quit")
+
+
+class ModelServerMixin:
+    """Model Server to distribute weights of the most up to date model"""
+
+    def __init__(self, args):
+        self.address = (
+            "*" if args.model_server_address is None else args.model_server_address
+        )
+        self.port = args.model_server_port
+        self.context = zmq.Context.instance()
+        self.socket = self.context.socket(zmq.REP)
+        self.socket.bind(f"tcp://*:{self.port}")
+        self.publisher = self.context.socket(zmq.PUB)
+        self.publisher.bind(f"tcp://*:{self.port + 1}")
+
+
+class ModelClientMixin:
+    """Model client to receive weights from the model server"""
+
+    def __init__(self, address: str, port: int):
+        self.context = zmq.Context.instance()
+        self.socket = self.context.socket(zmq.REQ)
+        self.socket.connect(f"tcp://{address}:{port}")
+        self.subscriber = self.context.socket(zmq.SUB)
+        self.subscriber.connect(f"tcp://{address}:{port + 1}")

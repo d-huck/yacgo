@@ -1,5 +1,8 @@
+"""Simple Game Class"""
+
 from yacgo.go import game, govars
 from yacgo.player import Player
+
 
 class Game:
     def __init__(self, board_size, black: Player, white: Player, komi=0):
@@ -9,7 +12,7 @@ class Game:
         self.turn = govars.BLACK
         self.done = False
         self.score = 0
-    
+
     def step(self):
         if not self.done:
             action = self.players[self.turn].sample_action(self.state)
@@ -21,7 +24,7 @@ class Game:
 
         return self.score
 
-    def play_full(self, print_every = False, print_final = False):
+    def play_full(self, print_every=False, print_final=False):
         while not self.done:
             if print_every:
                 print(game.str(self.state))
@@ -29,5 +32,5 @@ class Game:
 
         if print_every or print_final:
             print(game.str(self.state))
-        
+
         return self.score

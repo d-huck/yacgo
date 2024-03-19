@@ -3,8 +3,9 @@ Runs a yacgo inference server.
 """
 
 from multiprocessing import Process
-from yacgo.utils import make_args
+
 from yacgo.models import InferenceServer
+from yacgo.utils import make_args
 
 
 def inference_worker(port, args):
