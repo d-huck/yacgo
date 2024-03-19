@@ -3,10 +3,10 @@ Runs n GamePlay workers.
 """
 
 from multiprocessing import Process
-from yacgo.utils import make_args
-from yacgo.train_utils import GameGenerator
+
 from yacgo.models import InferenceClient
-from yacgo.data import DataGameClientMixin
+from yacgo.train_utils import GameGenerator
+from yacgo.utils import make_args
 
 
 def gameplay_worker(ports, args):
@@ -17,17 +17,18 @@ def gameplay_worker(ports, args):
         args (dict): args dict.
     """
     model = InferenceClient(ports)
-    data_client = DataGameClientMixin(args)
     game_gen = GameGenerator(model, args)
     print("Starting Game Generation...")
-    data = game_gen.sim_data(1024)
-    for d in data:
-        data_client.deposit(d)
-    while True:
-        data = game_gen.sim_game()
-        print("Game finished!")
-        for d in data:
-            data_client.deposit(d)
+    # data = game_gen.sim_data(1024)
+    # for d in data:
+    #     data_client.deposit(d)
+    try:
+        while True:
+            game_gen.sim_game()
+            print("Game finished!")
+    except KeyboardInterrupt:
+        print("Quitting game generation, closing sockets...")
+        game_gen.destroy()
 
 
 def main():
