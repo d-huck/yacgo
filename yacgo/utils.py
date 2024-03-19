@@ -131,6 +131,7 @@ def make_args():
     parser = argparse.ArgumentParser()
     device = "cuda" if torch.cuda.is_available() else "mps"
 
+    # training args
     parser.add_argument(
         "--device",
         type=str,
@@ -138,14 +139,38 @@ def make_args():
         help="Device for inference/training. Defaults to CUDA, MPS recommended on MacOS",
     )
     parser.add_argument(
-        "--board_size",
-        type=int,
-        default=19,
-        help="Board size for Go game. Defaults to 19x19",
+        "--model_size",
+        type=str,
+        default="S0",
+        help="Size of the model. Options are S0, S1, S2, L",
     )
     parser.add_argument(
         "--training_batch_size", type=int, default=128, help="Batch size for training"
     )
+    parser.add_argument(
+        "--training_steps_per_epoch",
+        type=int,
+        default=10_000,
+        help=(
+            "How many training steps per epoch. At the end of each epoch,"
+            "a competition is run to update the model."
+        ),
+    )
+    parser.add_argument(
+        "--num_feature_channels",
+        "-fc",
+        type=int,
+        default=6,
+        help="Number of feature channels for the model",
+    )
+    parser.add_argument(
+        "--weights_cache_dir",
+        type=str,
+        default=None,
+        help="Directory to cache model weights. Defaults to None",
+    )
+
+    # Inference settings
     parser.add_argument(
         "--inference_batch_size",
         type=int,
@@ -157,13 +182,6 @@ def make_args():
         ),
     )
     parser.add_argument(
-        "--num_servers", type=int, default=2, help="Number of inference servers to use"
-    )
-
-    parser.add_argument(
-        "--num_games", type=int, default=4, help="Number of games to play"
-    )
-    parser.add_argument(
         "--inference_server_port",
         type=int,
         default=5000,
@@ -173,25 +191,116 @@ def make_args():
         ),
     )
     parser.add_argument(
+        "--inference_server_address",
+        type=str,
+        default=None,
+        help=(
+            "Address for the inference server. Defaults to None, which"
+            "listens on all public addresses.",
+        ),
+    )
+    parser.add_argument(
+        "--num_servers", type=int, default=2, help="Number of inference servers to use"
+    )
+
+    # Data and weight sharing settings
+    parser.add_argument(
         "--databroker_port",
         type=int,
         default=6000,
         help="Port for the databroker server. Defaults to 6000",
     )
-
     parser.add_argument(
-        "--num_feature_channels",
-        "-fc",
-        type=int,
-        default=6,
-        help="Number of feature channels for the model",
+        "--databroker_address",
+        type=str,
+        default=None,
+        help=(
+            "Address for the databroker server. Defaults to None, which"
+            "listens on all public addresses.",
+        ),
     )
     parser.add_argument(
-        "--model_size",
+        "--replay_buffer_size",
+        type=int,
+        default=100_000,
+        help="Size of the replay buffer. Defaults to 100,000",
+    )
+    parser.add_argument(
+        "--replay_buffer_min_size",
+        type=int,
+        default=10_000,
+        help="Minimum size of the replay buffer before training starts",
+    )
+    parser.add_argument(
+        "--data_cache_dir",
         type=str,
-        default="S0",
-        help="Size of the model. Options are S0, S1, S2, L",
+        default=None,
+        help="Directory to cache game data. Defaults to None which does not cache",
+    )
+    parser.add_argument(
+        "--model_server_port",
+        type=int,
+        default=6010,
+        help="Port for the model server. Defaults to 6010",
+    )
+    parser.add_argument(
+        "--model_server_address",
+        type=str,
+        default=None,
+        help=(
+            "Address for the model server. Defaults to None, which"
+            "listens on all public addresses.",
+        ),
+    )
+
+    # Game Settings
+    parser.add_argument(
+        "--num_games", type=int, default=4, help="Number of games to play"
+    )
+    parser.add_argument(
+        "--komi",
+        type=float,
+        default=0.0,
+        help="Komi for Go game. Defaults to 0.0",
+    )
+    parser.add_argument(
+        "--n_simulations",
+        type=int,
+        default=400,
+        help="Number of simulations for MCTS for gameplay. Defaults to 400",
+    )
+    parser.add_argument(
+        "--pcap_train",
+        type=int,
+        default=400,
+        help="Number of simulations for MCTS during data generation. Defaults to 400",
+    )
+    parser.add_argument(
+        "--pcap_fast",
+        type=int,
+        default=100,
+        help="Number of simulations for MCTS. Defaults to 100",
+    )
+    parser.add_argument(
+        "--pcap_prob",
+        type=float,
+        default=0.25,
+        help="Probability of using Playout Cap in training. Defaults to 0.25",
+    )
+
+    parser.add_argument(
+        "--board_size",
+        type=int,
+        default=19,
+        help="Board size for Go game. Defaults to 19x19",
     )
 
     args = parser.parse_args()
+
+    # Do any sanitation here
+    if args.data_cache_dir is not None and not args.data_cache_dir.endswith("/"):
+        args.data_cache_dir += "/"
+    if args.weights_cache_dir is not None and not args.weights_cache_dir.endswith("/"):
+        args.weights_cache_dir += "/"
+
     return args
