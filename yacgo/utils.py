@@ -253,7 +253,7 @@ def make_args():
         ),
     )
 
-    # Game Settings
+    # Game / MCTS Settings
     parser.add_argument(
         "--num_games", type=int, default=4, help="Number of games to play"
     )
@@ -293,6 +293,18 @@ def make_args():
         type=int,
         default=19,
         help="Board size for Go game. Defaults to 19x19",
+    )
+    parser.add_argument(
+        "--c_puct",
+        type=float,
+        default=1.1,
+        help="C_puct for MCTS. Defaults to 1.1",
+    )
+    parser.add_argument(
+        "--mcts_noise",
+        type=bool,
+        default=True,
+        help="Whether to sample from Direchlet noise in MCTS when generating games. Defaults to False",
     )
 
     args = parser.parse_args()

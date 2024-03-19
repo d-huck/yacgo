@@ -2,6 +2,8 @@
 Utils for training and evaluating models. 
 """
 
+# pylint: disable=missing-function-docstring,missing-class-docstring
+
 from dataclasses import dataclass
 from typing import List, Tuple
 
@@ -19,26 +21,22 @@ from yacgo.models import Model
 class GameGenerator(DataGameClientMixin):
     def __init__(
         self,
-        board_size,
         model: Model,
         args: dict,
-        komi=0,
-        pcap_train=400,
-        pcap_fast=100,
-        pcap_prob=0.25,
     ):
         super().__init__(args)
-        self.board_size = board_size
+        self.board_size = args.board_size
         self.model = model
-        self.komi = komi
-        self.pcap_train = pcap_train
-        self.pcap_fast = pcap_fast
-        self.pcap_prob = pcap_prob
+        self.komi = args.komi
+        self.pcap_train = args.pcap_train
+        self.pcap_fast = args.pcap_fast
+        self.pcap_prob = args.pcap_prob
+        self.args = args
 
     def sim_game(self):
         data: List[TrainState] = []
         state = game.init_state(self.board_size)
-        mcts = MCTSSearch(state, self.model, root=None, noise=True)
+        mcts = MCTSSearch(state, self.model, self.args, noise=True, root=None)
         while not game.game_ended(state):
             train = np.random.random() < self.pcap_prob
             mcts.run_sims(self.pcap_train if train else self.pcap_fast)
@@ -50,7 +48,9 @@ class GameGenerator(DataGameClientMixin):
                 np.arange(game.action_size(state)), p=action_probs
             )
             state = game.next_state(state, action)
-            mcts = MCTSSearch(state, self.model, root=nodes[action], noise=True)
+            mcts = MCTSSearch(
+                state, self.model, self.args, root=nodes[action], noise=True
+            )
 
         winner = game.winning(state)
         for d in data:
@@ -84,12 +84,14 @@ class CompetitionResult:
 
 
 class ModelCompetition:
-    def __init__(self, board_size, model1, model2, sims=400, komi=0):
+    def __init__(self, board_size, model1, model2, args):
         self.board_size = board_size
+
         self.model1 = model1
         self.model2 = model2
-        self.sims = sims
-        self.komi = komi
+        self.sims = args.n_simulations
+        self.komi = args.komi
+        self.args = args
 
     def compete(self, num_games=1) -> CompetitionResult:
         bw_games = num_games // 2
@@ -100,11 +102,11 @@ class ModelCompetition:
             if self.model1 is None:
                 b_player = RandomPlayer(govars.BLACK)
             else:
-                b_player = MCTSPlayer(govars.BLACK, self.model1, self.sims, self.komi)
+                b_player = MCTSPlayer(govars.BLACK, self.model1, self.args)
             if self.model2 is None:
                 w_player = RandomPlayer(govars.WHITE)
             else:
-                w_player = MCTSPlayer(govars.WHITE, self.model2, self.sims, self.komi)
+                w_player = MCTSPlayer(govars.WHITE, self.model2, self.args)
 
             g = Game(self.board_size, b_player, w_player, self.komi)
             result = g.play_full()
@@ -115,11 +117,11 @@ class ModelCompetition:
             if self.model2 is None:
                 b_player = RandomPlayer(govars.BLACK)
             else:
-                b_player = MCTSPlayer(govars.BLACK, self.model2, self.sims, self.komi)
+                b_player = MCTSPlayer(govars.BLACK, self.model2, self.args)
             if self.model1 is None:
                 w_player = RandomPlayer(govars.WHITE)
             else:
-                w_player = MCTSPlayer(govars.WHITE, self.model1, self.sims, self.komi)
+                w_player = MCTSPlayer(govars.WHITE, self.model1, self.args)
             g = Game(self.board_size, b_player, w_player, self.komi)
             result = g.play_full()
             raw_wb_results.append(result)

@@ -1,17 +1,21 @@
-import numpy as np
-from typing import List
+"""
+Logic for MCTS search
+"""
 
-from yacgo.go import game, govars
+# pylint: disable=missing-function-docstring,missing-class-docstring
+import numpy as np
+
+from yacgo.go import game
 
 
 class MCTSSearch:
-    def __init__(self, state, model, root=None, noise=False, c_puct=1.1, komi=0):
+    def __init__(self, state, model, args: dict, noise=False, root=None):
         self.state = state
         self.model = model
-        self.c_puct = c_puct
+        self.c_puct = args.c_puct
         self.action_dim = game.action_size(state)
-        self.noise = noise
-        self.komi = komi
+        self.noise = args.mcts_noise and noise  # consider args option for noise
+        self.komi = args.komi
         self.sims_run = 0
         if root is None:
             self.root: MCTSNode = MCTSNode(state, parent=None, search=self)

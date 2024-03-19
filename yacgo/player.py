@@ -64,11 +64,15 @@ class MCTSPlayer(Player):
         self.model = model
         self.komi = args.komi
         self.sims = args.n_simulations
+        self.args = args
 
     def action_probs(self, state):
         if self.search is None:
             self.search = MCTSSearch(
-                state, self.model, root=None, noise=False, komi=self.komi
+                state,
+                self.model,
+                self.args,
+                root=None,
             )
         else:
             new_root = None
@@ -80,13 +84,9 @@ class MCTSPlayer(Player):
 
             if new_root is None:
                 # Picked an unexplored action, but we can just reset the search
-                self.search = MCTSSearch(
-                    state, self.model, root=None, noise=False, komi=self.komi
-                )
+                self.search = MCTSSearch(state, self.model, self.args, root=None)
             else:
-                self.search = MCTSSearch(
-                    state, self.model, root=new_root, noise=False, komi=self.komi
-                )
+                self.search = MCTSSearch(state, self.model, self.args, root=new_root)
 
         self.search.run_sims(self.sims)
         action_probs = self.search.action_probs()
