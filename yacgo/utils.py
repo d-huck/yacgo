@@ -10,8 +10,7 @@ import msgpack
 import numpy as np
 import torch
 
-DATA_DTYPE = np.float32  # pylint: disable=C0103
-TORCH_DTYPE = torch.float32
+from yacgo.data import TORCH_DTYPE, DATA_DTYPE  # pylint: disable=unused-import
 
 
 def init_signals():
@@ -255,7 +254,7 @@ def make_args():
 
     # Game / MCTS Settings
     parser.add_argument(
-        "--num_games", type=int, default=4, help="Number of games to play"
+        "--num_games", type=int, default=8, help="Number of games to play"
     )
     parser.add_argument(
         "--komi",
@@ -272,8 +271,11 @@ def make_args():
     parser.add_argument(
         "--pcap_train",
         type=int,
-        default=400,
-        help="Number of simulations for MCTS during data generation. Defaults to 400",
+        default=None,
+        help=(
+            "Number of simulations for MCTS during data generation. defaults "
+            "to n_simulations (400) if not provided."
+        ),
     )
     parser.add_argument(
         "--pcap_fast",
@@ -314,5 +316,7 @@ def make_args():
         args.data_cache_dir += "/"
     if args.weights_cache_dir is not None and not args.weights_cache_dir.endswith("/"):
         args.weights_cache_dir += "/"
+    if args.pcap_train is None:
+        args.pcap_train = args.n_simulations
 
     return args
