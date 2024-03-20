@@ -159,7 +159,7 @@ def make_args():
         "--num_feature_channels",
         "-fc",
         type=int,
-        default=6,
+        default=11,
         help="Number of feature channels for the model",
     )
     parser.add_argument(
@@ -167,6 +167,12 @@ def make_args():
         type=str,
         default=None,
         help="Directory to cache model weights. Defaults to None",
+    )
+    parser.add_argument(
+        "--refill_buffer",
+        type=bool,
+        default=False,
+        help="Whether to refill the replay buffer after training on a state. Defaults to False",
     )
 
     # Inference settings
