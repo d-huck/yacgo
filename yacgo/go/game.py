@@ -10,6 +10,10 @@ The state of the game is a numpy array
 3 - Invalid moves (including ko-protection)
 4 - Previous move was a pass
 5 - Game over
+6 - Previous Action
+7 - Previous Action 2
+...
+10 - Previous Action 5
 """
 
 # pylint: disable=missing-function-docstring,missing-class-docstring
@@ -102,6 +106,12 @@ def next_state(state, action1d, canonical=False):
     if canonical:
         # Set canonical form
         state = canonical_form(state)
+
+    # shift history
+    state[govars.FIRST_HIST_CHNL + 1:] = state[govars.FIRST_HIST_CHNL:-1]
+    state[govars.FIRST_HIST_CHNL] = 0
+    if not passed:
+        state[govars.FIRST_HIST_CHNL][action2d] = 1
 
     return state
 

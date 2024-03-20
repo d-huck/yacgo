@@ -45,7 +45,7 @@ class MCTSSearch:
         return np.argmax(self.action_probs())
 
     def action_probs(self):
-        if self.sims_run < self.root.pcap_fast:
+        if self.sims_run < self.pcap_fast:
             raise ValueError(f"# sims must be at least {self.pcap_fast}")
 
         scores = [

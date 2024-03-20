@@ -37,7 +37,7 @@ class RandomPlayer(Player):
 class HumanPlayer(Player):
     def action_probs(self, state):
         action = np.zeros(game.action_size(state))
-        print(game.str(state))
+        print(game.state_to_str(state))
         success = False
         while not success:
             try:

@@ -27,10 +27,11 @@ class Game:
     def play_full(self, print_every=False, print_final=False):
         while not self.done:
             if print_every:
-                print(game.str(self.state))
+                print(game.state_to_str(self.state))
+
             self.step()
 
         if print_every or print_final:
-            print(game.str(self.state))
+            print(game.state_to_str(self.state))
 
         return self.score
