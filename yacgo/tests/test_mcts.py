@@ -4,7 +4,7 @@ from yacgo.player import Player, RandomPlayer, HumanPlayer, MCTSPlayer
 from yacgo.algos.mcts import MCTSSearch
 from yacgo.models import InferenceRandom
 import numpy as np
-from yacgo.utils import make_args
+from yacgo.utils import make_args, set_args
 
 model = InferenceRandom()
 args = make_args()
@@ -64,7 +64,7 @@ def custom_state_test():
 
     test_state = np.array(black_test_state)
     print(game.state_to_str(test_state))
-    mcts = MCTSSearch(test_state, model, args)
+    mcts = MCTSSearch(test_state, model, set_args(n_simulations=10000))
     mcts.run_sims(10000)
     print("action probs")
     print(mcts.action_probs())

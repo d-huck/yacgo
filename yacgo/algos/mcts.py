@@ -6,6 +6,7 @@ Logic for MCTS search
 import numpy as np
 
 from yacgo.go import game
+from typing import List
 
 
 class MCTSSearch:
@@ -26,8 +27,7 @@ class MCTSSearch:
             self.root: MCTSNode = root
             self.sims_run = self.root.total_visits
             self.root.parent = None
-            if not root.initialized:
-                root.initialize()
+            root.initialize()
 
     def sim(self):
         child = self.root.best_child(self.c_puct)
@@ -70,9 +70,12 @@ class MCTSNode:
         self.valid_moves = game.valid_moves(state)
         self.valid_move_count = sum(self.valid_moves)
         self.value = 0
-        # self.children: List[MCTSNode] = [None] * search.action_dim
+        self.children: List[MCTSNode] = [None] * search.action_dim
+        self.children_initialized = False
 
     def initialize(self):
+        if self.initialized:
+            return
         self.initialized = True
         self.total_visits += 1
         if game.game_ended(self.state):
@@ -85,20 +88,27 @@ class MCTSNode:
                 self.state
             )  # TODO: Can we remove invalid moves from channel features?
             self.terminal = False
-            self.children = [
+
+    def initialize_children(self):
+        if self.children_initialized:
+            return
+        
+        self.children_initialized = True
+        
+        self.children = [
+            (
                 (
-                    (
-                        MCTSNode(
-                            game.next_state(self.state, a),
-                            parent=self,
-                            search=self.search,
-                        )
+                    MCTSNode(
+                        game.next_state(self.state, a),
+                        parent=self,
+                        search=self.search,
                     )
-                    if self.valid_moves[a] == 1
-                    else None
                 )
-                for a in range(game.action_size(self.state))
-            ]
+                if self.valid_moves[a] == 1
+                else None
+            )
+            for a in range(game.action_size(self.state))
+        ]
 
     def value_score(self):
         if self.value == 0:
@@ -127,6 +137,8 @@ class MCTSNode:
             self.total_visits += 1
             return self
 
+        self.initialize_children()
+        
         # TODO: refactor for clarity
         noisy_policy = self.noisy_policy()
 

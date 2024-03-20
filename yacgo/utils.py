@@ -320,3 +320,11 @@ def make_args():
         args.pcap_train = args.n_simulations
 
     return args
+
+def set_args(**kwargs):
+    args = make_args()
+    d = vars(args)
+    for k, v in kwargs.items():
+        d[k] = v
+
+    return args
