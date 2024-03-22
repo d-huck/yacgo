@@ -2,6 +2,7 @@
 Runs a yacgo inference server.
 """
 
+import multiprocessing as mp
 from multiprocessing import Process
 
 from yacgo.models import InferenceServer
@@ -23,7 +24,7 @@ def inference_worker(port, args):
 def main():
     """Main process"""
     args = make_args()
-
+    mp.set_start_method("forkserver")
     try:
         servers = []
         port = args.inference_server_port

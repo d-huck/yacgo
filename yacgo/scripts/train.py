@@ -2,10 +2,14 @@
 Example script on running a simple training server
 """
 
+import multiprocessing as mp
+import time
 from multiprocessing import Process
+
 from yacgo.utils import make_args
-from yacgo.models import Trainer
+from yacgo.models import Trainer, InferenceClient
 from yacgo.data import DataBroker
+from yacgo.train_utils import CompetitionResult, ModelCompetition
 
 
 def trainer_worker(args):
@@ -16,7 +20,24 @@ def trainer_worker(args):
     """
     trainer = Trainer(args)
     print("Starting trainer...")
-    trainer.run()
+    count = 1
+    while True:
+        trainer.run()
+        trainer.save_pretrained(f"/data/models/yacgo/5x5-initial-epoch{count:03d}")
+        count += 1
+        # ports = list(
+        #     range(
+        #         args.inference_server_port,
+        #         args.inference_server_port + args.num_servers,
+        #     )
+        # )
+        # inf = InferenceClient(ports)
+        # time.sleep(5)
+        # inf.model = trainer.model
+        # comp = ModelCompetition(args.board_size, inf, None, args)
+        # result = comp.compete(num_games=128)
+        # print(result)
+        # break
 
 
 def databroker_worker(args):
@@ -36,6 +57,7 @@ def main():
     Main Process
     """
     args = make_args()
+    mp.set_start_method("forkserver")
     try:
         trainer = Process(target=trainer_worker, args=(args,), daemon=True)
         trainer.start()

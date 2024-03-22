@@ -2,6 +2,8 @@
 Runs n GamePlay workers.
 """
 
+import multiprocessing as mp
+import time
 from multiprocessing import Process
 
 from yacgo.models import InferenceClient
@@ -9,7 +11,7 @@ from yacgo.train_utils import GameGenerator
 from yacgo.utils import make_args
 
 
-def gameplay_worker(ports, args):
+def gameplay_worker(ports, i, args):
     """Wrapper around a simple gameplay worker.
 
     Args:
@@ -18,14 +20,14 @@ def gameplay_worker(ports, args):
     """
     model = InferenceClient(ports)
     game_gen = GameGenerator(model, args)
-    print("Starting Game Generation...")
+    print(f"{i:03d}: Starting Game Generation...")
     # data = game_gen.sim_data(1024)
     # for d in data:
     #     data_client.deposit(d)
     try:
         while True:
             game_gen.sim_game()
-            print("Game finished!")
+            print(f"{i:03d}: Game finished!")
     except KeyboardInterrupt:
         print("Quitting game generation, closing sockets...")
         game_gen.destroy()
@@ -36,6 +38,8 @@ def main():
     Main Process
     """
     args = make_args()
+
+    # mp.set_start_method("forkserver")
     try:
         games = []
         ports = list(
@@ -44,12 +48,13 @@ def main():
                 args.inference_server_port + args.num_servers,
             )
         )
-        for _ in range(args.num_games):
+        for i in range(args.num_games):
             games.append(
-                Process(target=gameplay_worker, args=(ports, args), daemon=True)
+                Process(target=gameplay_worker, args=(ports, i, args), daemon=True)
             )
         print("Starting games...")
-        for game in games:
+        for i, game in enumerate(games):
+            # time.sleep(1)  # be nice to your cpu
             game.start()
 
         for game in games:
