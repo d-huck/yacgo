@@ -53,6 +53,7 @@ class ViTWrapper(object):
         embed_dims = EfficientFormer_width[args.model_size]
         mlp_ratios = EfficientFormer_expansion_ratios[args.model_size]
 
+        self.device = args.device
         self.model = EfficientFormerV2(
             depths=depths,
             in_chans=args.num_feature_channels,
@@ -61,9 +62,10 @@ class ViTWrapper(object):
             num_vit=2,
             mlp_ratios=mlp_ratios,
             num_classes=args.board_size**2 + 1,
-        ).to(args.device)
+        ).to(self.device)
         self.model_size = args.model_size
-        self.device = args.device
+        if args.model_path is not None:
+            self.load_pretrained(args.model_path)
         self.board_size = args.board_size
         self.n_chans = args.num_feature_channels
 
@@ -72,7 +74,7 @@ class ViTWrapper(object):
 
     def load_pretrained(self, path: str):
         """
-        Load pretrained model. Provided model weights may be fore a smaller
+        Load pretrained model. Provided model weights may be for a smaller
         version of the model, in which layers not present in the weights should
         be initialized.
 
@@ -126,9 +128,8 @@ class InferenceLocal(ViTWrapper, Model):
     the bot or simple testing.
     """
 
-    def __init__(self, args: dict, model_path: str):
+    def __init__(self, args: dict):
         super().__init__(args)
-        self.load_pretrained(model_path)
         self.model.eval()
 
     def forward(self, inputs: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
@@ -183,7 +184,6 @@ class InferenceServer(ViTWrapper):
 
     def __init__(self, port, args: dict):
         super().__init__(args)
-
         self.model.eval()
         self.port = port
         self.context = zmq.Context.instance()
