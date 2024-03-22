@@ -265,8 +265,8 @@ def make_args():
     parser.add_argument(
         "--komi",
         type=float,
-        default=0.0,
-        help="Komi for Go game. Defaults to 0.0",
+        default=0.5,
+        help="Komi for Go game. Defaults to 0.5 to avoid draws, giving white slight advantage",
     )
     parser.add_argument(
         "--n_simulations",
