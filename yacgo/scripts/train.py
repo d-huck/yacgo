@@ -6,10 +6,21 @@ import multiprocessing as mp
 import time
 from multiprocessing import Process
 
+
 from yacgo.utils import make_args
-from yacgo.models import Trainer, InferenceClient
+from yacgo.models import Trainer, InferenceClient, InferenceLocal
 from yacgo.data import DataBroker
 from yacgo.train_utils import CompetitionResult, ModelCompetition
+
+
+def competition(args):
+    model1 = InferenceLocal(args, "/data/models/yacgo/5x5-initial-epoch101")
+    model2 = InferenceLocal(args, "/data/models/yacgo/5x5-initial-epoch055")
+    print("Loading inference local worker")
+    comp = ModelCompetition(args.board_size, model1, model2, args)
+    result = comp.compete(num_games=16)
+    del model1, model2
+    print(result)
 
 
 def trainer_worker(args):
@@ -19,25 +30,14 @@ def trainer_worker(args):
         args (dict): args dict.
     """
     trainer = Trainer(args)
-    print("Starting trainer...")
+
     count = 1
     while True:
         trainer.run()
-        trainer.save_pretrained(f"/data/models/yacgo/5x5-initial-epoch{count:03d}")
+        trainer.save_pretrained(
+            f"/data/models/yacgo/ver2/initial_trials-bs{args.board_size}-e{count:03d}.tgz"
+        )
         count += 1
-        # ports = list(
-        #     range(
-        #         args.inference_server_port,
-        #         args.inference_server_port + args.num_servers,
-        #     )
-        # )
-        # inf = InferenceClient(ports)
-        # time.sleep(5)
-        # inf.model = trainer.model
-        # comp = ModelCompetition(args.board_size, inf, None, args)
-        # result = comp.compete(num_games=128)
-        # print(result)
-        # break
 
 
 def databroker_worker(args):

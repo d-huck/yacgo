@@ -207,6 +207,9 @@ def make_args():
     parser.add_argument(
         "--num_servers", type=int, default=2, help="Number of inference servers to use"
     )
+    parser.add_argument(
+        "--model_path", type=str, default=None, help="Path to model weights"
+    )
 
     # Data and weight sharing settings
     parser.add_argument(
@@ -326,6 +329,7 @@ def make_args():
         args.pcap_train = args.n_simulations
 
     return args
+
 
 def set_args(**kwargs):
     args = make_args()
