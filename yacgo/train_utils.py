@@ -105,13 +105,20 @@ class ModelCompetition:
         self.sims = args.n_simulations
         self.komi = args.komi
         self.args = args
+        self.pbar = tqdm(total=1, unit="game", postfix={"score": 0.0})
 
     def compete(self, num_games=1) -> CompetitionResult:
         bw_games = num_games // 2
         wb_games = num_games - bw_games
+        scores = []
+        self.pbar.reset(total=num_games)
+
+        def avg_score():
+            return f"{sum(scores) / len(scores):04.4f}"
 
         raw_bw_results = []
-        for _ in tqdm(range(bw_games), desc="Black vs White", unit="game", leave=False):
+        self.pbar.set_description("Black vs White")
+        for _ in range(bw_games):
             if self.model1 is None:
                 b_player = RandomPlayer(govars.BLACK)
             else:
@@ -123,10 +130,14 @@ class ModelCompetition:
 
             g = Game(self.board_size, b_player, w_player, self.komi)
             result = g.play_full()
+            scores.append(result)
+            self.pbar.set_postfix({"score": avg_score()})
+            self.pbar.update(1)
             raw_bw_results.append(result)
 
         raw_wb_results = []
-        for _ in tqdm(range(wb_games), desc="White vs Black", unit="game", leave=False):
+        self.pbar.set_description("White vs Black")
+        for _ in range(wb_games):
             if self.model2 is None:
                 b_player = RandomPlayer(govars.BLACK)
             else:
@@ -137,6 +148,9 @@ class ModelCompetition:
                 w_player = MCTSPlayer(govars.WHITE, self.model1, self.args)
             g = Game(self.board_size, b_player, w_player, self.komi)
             result = g.play_full()
+            scores.append(result)
+            self.pbar.set_postfix({"score": avg_score()})
+            self.pbar.update(1)
             raw_wb_results.append(result)
 
         raw_bw_results = np.array(raw_bw_results)
