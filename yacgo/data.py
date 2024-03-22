@@ -325,8 +325,9 @@ class DataBroker(object):
         if self.cache_dir is None:
             return
 
+        self.refill_buffer = False
         while not self.replay_buffer.empty():
-            batch = self.get_batch(1024, refill=False)
+            batch = self.get_batch(1024)
             fp = self.cache_dir + str(uuid.uuid4()) + ".npz"
             np.savez_compressed(
                 fp, states=batch.states, values=batch.values, policies=batch.policies
@@ -386,7 +387,9 @@ class DataGameClientMixin:
         self.data_context = zmq.Context.instance()
         self.data_socket = self.data_context.socket(zmq.REQ)
         self.data_socket.setsockopt(zmq.IDENTITY, identity)
-        self.data_socket.connect(f"tcp://localhost:{args.databroker_port}")
+        self.data_socket.connect(
+            f"tcp://{args.inference_server_address}:{args.databroker_port}"
+        )
 
     def deposit(self, example: TrainState):
         """Deposits a single training example into the data broker"""
