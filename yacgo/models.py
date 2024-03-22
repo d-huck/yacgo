@@ -97,7 +97,7 @@ class ViTWrapper(object):
         Raises:
             NotImplementedError: _description_
         """
-        self.model.save_state_dict(path)
+        torch.save(self.model.state_dict(), path)
 
 
 class InferenceRandom(Model):
@@ -121,22 +121,27 @@ class InferenceEqual(Model):
         return 0, pol
 
 
-class InferenceLocal(Model, ViTWrapper):
+class InferenceLocal(ViTWrapper, Model):
     """Simple Model interface that handles inference locally, for playing games against
     the bot or simple testing.
     """
 
     def __init__(self, args: dict):
-        ViTWrapper.__init__(self, args)
+        super().__init__(args)
 
-    def forward(self, inputs):
+    def forward(self, inputs: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """Forward pass of the model
 
         Args:
             inputs (np.ndarray): state of single game
 
         """
-        return self.model.forward(inputs)
+        inputs = torch.tensor(inputs).to(self.device)
+        inputs = inputs.unsqueeze(dim=0)  # pretend there is a batch of size 1
+        value, policy = self.model.forward(inputs)
+        value = value.detach().cpu().numpy()
+        policy = policy.detach().cpu().numpy()
+        return value, policy
 
 
 class InferenceClient(Model):
@@ -185,7 +190,7 @@ class InferenceServer(ViTWrapper):
         self.socket.setsockopt(zmq.LINGER, 0)
 
         # TODO: compare with immediate time out
-        self.socket.setsockopt(zmq.RCVTIMEO, 1)
+        self.socket.setsockopt(zmq.RCVTIMEO, 0)
 
         self.batch_size = args.inference_batch_size
         self.n_chans = args.num_feature_channels
@@ -271,9 +276,7 @@ class Trainer(ViTWrapper, DataTrainClientMixin):
         self.training_steps = args.training_steps_per_epoch
         self.model.train()
 
-    def train_step(
-        self, states: torch.Tensor, policies: torch.Tensor, values: torch.Tensor
-    ):
+    def train_step(self, states: np.ndarray, policies: np.ndarray, values: np.ndarray):
         """
         Perform a single training step on the model.
 
@@ -296,7 +299,7 @@ class Trainer(ViTWrapper, DataTrainClientMixin):
         loss.backward()
         self.optimizer.step()
 
-        return loss.item()
+        return loss.detach().cpu().item()
 
     def run(
         self,
@@ -308,20 +311,20 @@ class Trainer(ViTWrapper, DataTrainClientMixin):
         try:
             for i in range(self.training_steps):
                 batch = self.get_batch()
-                if batch.batch_size == 0:
-                    print("Empty Batch, sleeping...")
+                while batch.batch_size == 0:
                     time.sleep(5)
-                    continue
+                    batch = self.get_batch()
+
                 loss = self.train_step(batch.states, batch.policies, batch.values)
                 losses.append(loss)
                 avg = sum(losses) / len(losses)
-                print(f"Training Step {i:06,d}, Loss : {avg:04.4f}", end="\r")
+                print(f"Training Step {i:06,d}, Loss : {avg:04.4f}\n", end="\r")
                 if len(losses) > 10:
                     _ = losses.pop(0)
         except KeyboardInterrupt:
+            self.destroy()
+            print("Trainer has quit")
             pass
-        self.destroy()
-        print("Trainer has quit")
 
 
 class ModelServerMixin:
