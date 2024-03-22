@@ -3,7 +3,6 @@ Code for evaluating networks.
 """
 
 from dataclasses import dataclass
-import multiprocessing as mp
 from multiprocessing import Pool, Lock
 from typing import Tuple
 
@@ -12,7 +11,7 @@ from tqdm.auto import tqdm
 
 from yacgo.game import Game
 from yacgo.go import govars
-from yacgo.models import Model, InferenceClient
+from yacgo.models import InferenceClient
 from yacgo.player import MCTSPlayer, RandomPlayer
 
 # mp.set_start_method("fork")
@@ -45,21 +44,24 @@ class ModelCompetition:
         self.sims = args.n_simulations
         self.komi = args.komi
         self.args = args
-        self.pbar = tqdm(total=1, unit="game", postfix={"score": 0.0})
+        self.pbar = tqdm(total=1, unit="game", postfix={"score": 0.0}, smoothing=0.001)
         self.lock = Lock()
         self.n_workers = n_workers
         self.scores = []
 
     @staticmethod
     def play_game(game_args):
-        """Plays an individual game in the competition.
+        """Plays a single game between two models. Since this is multithreaded,
+        it can only take a single argument and cannot be a class method.
 
         Args:
-            game_num (which game number is this): keeps track of which games are ongoing
-            players (str): "bw" or "wb" to determine who plays black and white
+            game_args (_type_): list of arguments for the game (model1, model2,
+                args, komi). modelX is expected to be the port on which an
+                InferenceClient can connect to the server for the model. If
+                modelX is None, then RandomPlayer will be used
 
         Returns:
-            Result: winner of the game 1 for black, -1 for white, 0 for draw
+            _type_: _description_
         """
         model1, model2, args, komi = game_args
         if model1 is None:
