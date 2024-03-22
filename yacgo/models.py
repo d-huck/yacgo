@@ -84,7 +84,7 @@ class ViTWrapper(object):
             NotImplementedError: _description_
         """
 
-        self.model.load_state_dict(torch.load(path))
+        self.model.load_state_dict(torch.load(path, map_location=self.device))
 
     def save_pretrained(self, path: str):
         """
@@ -126,8 +126,10 @@ class InferenceLocal(ViTWrapper, Model):
     the bot or simple testing.
     """
 
-    def __init__(self, args: dict):
+    def __init__(self, args: dict, model_path: str):
         super().__init__(args)
+        self.load_pretrained(model_path)
+        self.model.eval()
 
     def forward(self, inputs: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """Forward pass of the model
@@ -139,8 +141,8 @@ class InferenceLocal(ViTWrapper, Model):
         inputs = torch.tensor(inputs).to(self.device)
         inputs = inputs.unsqueeze(dim=0)  # pretend there is a batch of size 1
         value, policy = self.model.forward(inputs)
-        value = value.detach().cpu().numpy()
-        policy = policy.detach().cpu().numpy()
+        value = value.detach().cpu().numpy().squeeze()
+        policy = policy.detach().cpu().numpy().squeeze()
         return value, policy
 
 
