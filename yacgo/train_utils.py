@@ -10,6 +10,7 @@ from typing import List, Tuple
 
 import numpy as np
 
+from tqdm.auto import tqdm
 from yacgo.algos.mcts import MCTSSearch
 from yacgo.data import TrainState
 from yacgo.game import Game
@@ -110,7 +111,7 @@ class ModelCompetition:
         wb_games = num_games - bw_games
 
         raw_bw_results = []
-        for _ in range(bw_games):
+        for _ in tqdm(range(bw_games), desc="Black vs White", unit="game", leave=False):
             if self.model1 is None:
                 b_player = RandomPlayer(govars.BLACK)
             else:
@@ -125,7 +126,7 @@ class ModelCompetition:
             raw_bw_results.append(result)
 
         raw_wb_results = []
-        for _ in range(wb_games):
+        for _ in tqdm(range(wb_games), desc="White vs Black", unit="game", leave=False):
             if self.model2 is None:
                 b_player = RandomPlayer(govars.BLACK)
             else:
