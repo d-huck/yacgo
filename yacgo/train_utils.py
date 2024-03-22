@@ -42,7 +42,11 @@ class GameGenerator(DataGameClientMixin):
             mcts = MCTSSearch(state, self.model, self.args, noise=True, root=None)
             while not game.game_ended(state):
                 train = np.random.random() < self.pcap_prob
-                mcts.run_sims(self.pcap_train if train else self.pcap_fast)
+                mcts.run_sims(
+                    self.pcap_train
+                    if train
+                    else np.random.randint(self.pcap_fast, self.pcap_train // 2)
+                )
                 action_probs, nodes = mcts.action_probs_nodes()
                 if train:
                     data.append(TrainState(state, np.float32(0.0), action_probs))
