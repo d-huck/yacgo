@@ -131,7 +131,7 @@ class ModelCompetition:
             g = Game(self.board_size, b_player, w_player, self.komi)
             result = g.play_full()
             scores.append(result)
-            self.pbar.set_postfix({"score": avg_score()})
+            self.pbar.set_postfix({"avg score": avg_score()})
             self.pbar.update(1)
             raw_bw_results.append(result)
 
@@ -149,7 +149,7 @@ class ModelCompetition:
             g = Game(self.board_size, b_player, w_player, self.komi)
             result = g.play_full()
             scores.append(result)
-            self.pbar.set_postfix({"score": avg_score()})
+            self.pbar.set_postfix({"avg score": avg_score()})
             self.pbar.update(1)
             raw_wb_results.append(result)
 
