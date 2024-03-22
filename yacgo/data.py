@@ -249,8 +249,15 @@ class DataBroker(object):
         self.socket.bind(f"tcp://*:{self.port}")
         self.socket.setsockopt(zmq.LINGER, 0)
         self.socket.setsockopt(zmq.RCVTIMEO, 1)
+        self.refill_buffer = args.refill_buffer
+        self.batch_size = args.training_batch_size
+        self.min_size = (
+            args.training_batch_size
+            if not self.refill_buffer
+            else 16 * args.training_batch_size
+        )
 
-    def get_batch(self, batch_size: int = 32, refill=True) -> TrainingBatch:
+    def get_batch(self, batch_size: int = 32) -> TrainingBatch:
         """Returns a single batch from the replay buffer
 
         Args:
@@ -266,7 +273,7 @@ class DataBroker(object):
         values = []
         policies = []
         count = 0
-        for _ in range(batch_size):
+        for _ in range(self.batch_size):
             try:
                 data = self.replay_buffer.get(block=False)
             except Empty:  # python can be so gross sometimes
@@ -274,7 +281,7 @@ class DataBroker(object):
             states.append(data.state)
             values.append(data.value)
             policies.append(data.policy)
-            if refill:
+            if self.refill_buffer:
                 data.priority += HIGH_PRIORITY  # put at the end of the queue
                 self.replay_buffer.put(data)
             count += 1
@@ -338,7 +345,6 @@ class DataBroker(object):
         example = TrainState.unpack(message)
         data = PrioritizedTrainState.from_train_state(example)
         self.replay_buffer.put(data)
-        print("Processed data: Buffer size: ", self.replay_buffer.qsize(), end="\r")
 
     def run(self):
         """
@@ -362,6 +368,7 @@ class DataBroker(object):
                 pass
             except KeyboardInterrupt:
                 break
+            print("Data Buffer size: ", self.replay_buffer.qsize(), end="\r")
         print(
             f"Databroker has {self.replay_buffer.qsize()} items in the queue, dumping to disk..."
         )
