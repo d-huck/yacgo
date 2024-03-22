@@ -4,6 +4,7 @@ wrappers around the EfficientFormer and gives extra methods for reloading and
 saving models, as well as interfacing with the ZMQ.
 """
 
+import os
 import time
 import uuid
 from typing import Tuple
@@ -85,10 +86,9 @@ class ViTWrapper(object):
         Raises:
             NotImplementedError: _description_
         """
-
         self.model.load_state_dict(torch.load(path, map_location=self.device))
 
-    def save_pretrained(self, path: str):
+    def save_pretrained(self, path: str = None):
         """
         Save pretrained weights.
 
@@ -99,7 +99,12 @@ class ViTWrapper(object):
         Raises:
             NotImplementedError: _description_
         """
-        torch.save(self.model.state_dict(), path)
+        if path is None:
+            path = f"models/"
+        os.makedirs(path, exist_ok=True)
+        model_name = f"{self.model_size}-bs{self.board_size}-nc{self.n_chans}.pth"
+
+        torch.save(self.model.state_dict(), f"{path}/{model_name}")
 
 
 class InferenceRandom(Model):
