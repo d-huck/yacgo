@@ -198,11 +198,8 @@ def make_args():
     parser.add_argument(
         "--inference_server_address",
         type=str,
-        default=None,
-        help=(
-            "Address for the inference server. Defaults to None, which"
-            "listens on all public addresses.",
-        ),
+        default="localhost",
+        help=("Address of the inference servers.",),
     )
     parser.add_argument(
         "--num_servers", type=int, default=2, help="Number of inference servers to use"

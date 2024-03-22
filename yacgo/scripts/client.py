@@ -18,7 +18,7 @@ def gameplay_worker(ports, i, args):
         port (int): Port server is listening on.
         args (dict): args dict.
     """
-    model = InferenceClient(ports)
+    model = InferenceClient(ports, args.inference_server_address)
     game_gen = GameGenerator(model, args)
     print(f"{i:03d}: Starting Game Generation...")
     # data = game_gen.sim_data(1024)
@@ -39,7 +39,7 @@ def main():
     """
     args = make_args()
 
-    # mp.set_start_method("forkserver")
+    mp.set_start_method("fork")
     try:
         games = []
         ports = list(
