@@ -49,7 +49,7 @@ class ViTWrapper(object):
     to the original as possible. Handles construction, saving and loading of weights.
     """
 
-    def __init__(self, args: dict):
+    def __init__(self, args: dict, model_path=None):
         depths = EfficientFormer_depth[args.model_size]
         embed_dims = EfficientFormer_width[args.model_size]
         mlp_ratios = EfficientFormer_expansion_ratios[args.model_size]
@@ -65,7 +65,9 @@ class ViTWrapper(object):
             num_classes=args.board_size**2 + 1,
         ).to(self.device)
         self.model_size = args.model_size
-        if args.model_path is not None:
+        if model_path is not None:
+            self.load_pretrained(model_path)
+        elif args.model_path is not None:
             self.load_pretrained(args.model_path)
         self.board_size = args.board_size
         self.n_chans = args.num_feature_channels
@@ -88,7 +90,7 @@ class ViTWrapper(object):
         """
         self.model.load_state_dict(torch.load(path, map_location=self.device))
 
-    def save_pretrained(self, path: str = None):
+    def save_pretrained(self, path: str = None, iter: str = None):
         """
         Save pretrained weights.
 
@@ -101,10 +103,14 @@ class ViTWrapper(object):
         """
         if path is None:
             path = f"models/"
+        if iter is None:
+            iter = 0
         os.makedirs(path, exist_ok=True)
-        model_name = f"{self.model_size}-bs{self.board_size}-nc{self.n_chans}.pth"
+        model_name = f"{self.model_size}-bs{self.board_size}-nc{self.n_chans}-epoch-{iter:03d}.pth"
+        out = os.path.join(path, model_name)
+        torch.save(self.model.state_dict(), out)
 
-        torch.save(self.model.state_dict(), f"{path}/{model_name}")
+        return out
 
 
 class InferenceRandom(Model):
@@ -187,8 +193,8 @@ class InferenceServer(ViTWrapper):
         ViTWrapper (_type_): _description_
     """
 
-    def __init__(self, port, args: dict):
-        super().__init__(args)
+    def __init__(self, port, args: dict, model_path=None):
+        super().__init__(args, model_path)
         self.model.eval()
         self.port = port
         self.context = zmq.Context.instance()
