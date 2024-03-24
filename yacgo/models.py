@@ -334,7 +334,7 @@ class Trainer(ViTWrapper, DataTrainClientMixin):
                 losses.append(loss)
                 avg = sum(losses) / len(losses)
                 pbar.update(1)
-                pbar.setpostfix("Loss: {avg:04.4f}")
+                pbar.set_postfix({"Loss": f"{avg:04.4f}"})
                 if len(losses) > 10:
                     _ = losses.pop(0)
         except KeyboardInterrupt:

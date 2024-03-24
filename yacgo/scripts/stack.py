@@ -146,9 +146,14 @@ def trainer_worker(args):
                 ]
             for server in servers:
                 server.start()
-            comp = ModelCompetition(
-                NEW_MODEL_PORT, OLD_MODEL_PORT, args, n_workers=args.num_games
-            )
+            if old_model is not None:
+                comp = ModelCompetition(
+                    NEW_MODEL_PORT, OLD_MODEL_PORT, args, n_workers=args.num_games
+                )
+            else:
+                comp = ModelCompetition(
+                    NEW_MODEL_PORT, None, args, n_workers=args.num_games
+                )
             result = comp.compete(num_games=args.num_comp_games)
             if result.probs[0] >= 0.55:
                 old_model = model
