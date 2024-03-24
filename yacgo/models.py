@@ -331,7 +331,7 @@ class Trainer(ViTWrapper, DataTrainClientMixin):
                 loss = self.train_step(batch.states, batch.policies, batch.values)
                 losses.append(loss)
                 avg = sum(losses) / len(losses)
-                print(f"Training Step {i:06,d}, Loss : {avg:04.4f}\n", end="\r")
+                # print(f"Training Step {i:06,d}, Loss : {avg:04.4f}\n", end="\r")
                 if len(losses) > 10:
                     _ = losses.pop(0)
         except KeyboardInterrupt:

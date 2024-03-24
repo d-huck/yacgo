@@ -21,11 +21,7 @@ from yacgo.models import Model
 
 
 class GameGenerator(DataGameClientMixin):
-    def __init__(
-        self,
-        model: Model,
-        args: dict,
-    ):
+    def __init__(self, model: Model, args: dict, display: bool = False):
         super().__init__(args)
 
         self.board_size = args.board_size
@@ -35,11 +31,14 @@ class GameGenerator(DataGameClientMixin):
         self.pcap_fast = args.pcap_fast
         self.pcap_prob = args.pcap_prob
         self.args = args
+        self.display = display
 
     def sim_game(self):
         try:
             data: List[TrainState] = []
             state = game.init_state(self.board_size)
+            if self.display:
+                print(game.state_to_str(state))
             mcts = MCTSSearch(state, self.model, self.args, noise=True, root=None)
             while not game.game_ended(state):
                 train = np.random.random() < self.pcap_prob
@@ -56,6 +55,8 @@ class GameGenerator(DataGameClientMixin):
                     np.arange(game.action_size(state)), p=action_probs
                 )
                 state = game.next_state(state, action)
+                if self.display:
+                    print(game.state_to_str(state))
                 mcts = MCTSSearch(
                     state, self.model, self.args, root=nodes[action], noise=True
                 )
