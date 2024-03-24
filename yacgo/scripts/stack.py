@@ -69,7 +69,7 @@ def trainer_worker(args):
     # databroker.start()
     trainer = Trainer(args)
     old_model = args.model_path
-    iter = args.epoch
+    epoch = args.epoch
     print("Starting training loop...")
     while True:
         try:
@@ -110,8 +110,8 @@ def trainer_worker(args):
                     time.sleep(5)
 
             # run a training run and save the model
-            trainer.run()
-            model = trainer.save_pretrained(iter=iter)
+            trainer.run(epoch)
+            model = trainer.save_pretrained(iter=epoch)
 
             # shutdown infererers
             for server in servers:

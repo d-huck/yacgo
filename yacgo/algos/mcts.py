@@ -87,6 +87,7 @@ class MCTSNode:
             self.value, self.policy = self.search.model.forward(
                 self.state
             )  # TODO: Can we remove invalid moves from channel features?
+            self.value = self.value * game.turn_pm(self.state)
             self.terminal = False
 
     def initialize_children(self):
