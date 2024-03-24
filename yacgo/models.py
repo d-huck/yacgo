@@ -11,6 +11,7 @@ from typing import Tuple
 
 import numpy as np
 import torch
+from tqdm.auto import tqdm
 import zmq
 
 from yacgo.data import DataTrainClientMixin, State, Inference, TrainState
@@ -314,14 +315,15 @@ class Trainer(ViTWrapper, DataTrainClientMixin):
 
         return loss.detach().cpu().item()
 
-    def run(
-        self,
-    ):
+    def run(self, epoch: int = 0):
         """
         Runs the trainer indefinitely. Expects to receive a batch of inputs and
         """
         losses = []
         try:
+            pbar = tqdm(
+                desc=f"Training epoch {epoch}", total=self.training_steps, leave=False
+            )
             for i in range(self.training_steps):
                 batch = self.get_batch()
                 while batch.batch_size == 0:
@@ -331,7 +333,8 @@ class Trainer(ViTWrapper, DataTrainClientMixin):
                 loss = self.train_step(batch.states, batch.policies, batch.values)
                 losses.append(loss)
                 avg = sum(losses) / len(losses)
-                # print(f"Training Step {i:06,d}, Loss : {avg:04.4f}\n", end="\r")
+                pbar.update(1)
+                pbar.setpostfix("Loss: {avg:04.4f}")
                 if len(losses) > 10:
                     _ = losses.pop(0)
         except KeyboardInterrupt:
