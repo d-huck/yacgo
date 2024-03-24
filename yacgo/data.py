@@ -28,6 +28,9 @@ import torch
 import zmq
 
 DEPOSIT = 0
+GET_BATCH = 0
+RESET = 1
+
 HIGH_PRIORITY = 50
 TRAINING_BATCH = 1
 QUIT = -1
@@ -257,7 +260,7 @@ class DataBroker(object):
             else 32 * args.training_batch_size
         )
 
-    def get_batch(self, batch_size: int = 32) -> TrainingBatch:
+    def get_batch(self) -> TrainingBatch:
         """Returns a single batch from the replay buffer
 
         Args:
@@ -327,11 +330,16 @@ class DataBroker(object):
 
         self.refill_buffer = False
         while not self.replay_buffer.empty():
-            batch = self.get_batch(1024)
+            batch = self.get_batch()
             fp = self.cache_dir + str(uuid.uuid4()) + ".npz"
             np.savez_compressed(
                 fp, states=batch.states, values=batch.values, policies=batch.policies
             )
+
+    def reset(self, save=False):
+        if save:
+            self.dump_to_disk()
+        self.replay_buffer = PriorityQueue()
 
     def process_data(self, message):
         """
@@ -356,10 +364,16 @@ class DataBroker(object):
                 address, _, message = self.socket.recv_multipart()
 
                 if str(address, "utf-8").startswith("TRAIN"):
-                    batch_size = int(msgpack.unpackb(message))
-                    batch = self.get_batch(batch_size)
-                    if batch is not None:
-                        self.socket.send_multipart([address, b"", batch.pack()])
+                    msg = int(msgpack.unpackb(message))
+                    if msg == GET_BATCH:
+                        batch = self.get_batch()
+                        if batch is not None:
+                            self.socket.send_multipart([address, b"", batch.pack()])
+                        else:
+                            self.socket.send_multipart([address, b"", b""])
+                    elif msg == RESET:
+                        self.reset(save=True)
+                        self.socket.send_multipart([address, b"", b""])
                     else:
                         self.socket.send_multipart([address, b"", b""])
                 else:
@@ -418,8 +432,13 @@ class DataTrainClientMixin:
         self,
     ) -> Union[TrainingBatch, None]:
         """Returns a TrainingBatch from the data broker"""
-        self.data_socket.send(msgpack.packb(self.batch_size))
+        self.data_socket.send(msgpack.packb(GET_BATCH))
         return TrainingBatch.unpack(self.data_socket.recv())
+
+    def reset_data(self):
+        """Resets the data broker"""
+        self.data_socket.send(msgpack.packb(RESET))
+        _ = self.data_socket.recv()
 
     def destroy(self):
         """Sanely shuts down the zmq client"""
