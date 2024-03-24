@@ -19,6 +19,7 @@ class MCTSSearch:
         self.komi = args.komi
         self.pcap_fast = args.pcap_fast
         self.sims_run = 0
+        self.softmax_temp = args.softmax_temp
         if root is None:
             self.root: MCTSNode = MCTSNode(state, parent=None, search=self)
             self.root.initialize()
@@ -88,6 +89,9 @@ class MCTSNode:
                 self.state
             )  # TODO: Can we remove invalid moves from channel features?
             self.value = self.value * game.turn_pm(self.state)
+            self.policy *= self.valid_moves
+            e_x = np.exp(self.policy / (self.search.args.softmax_temp if self == self.search.root and self.search.noise else 1))
+            self.policy = e_x / np.sum(e_x)
             self.terminal = False
 
     def initialize_children(self):
