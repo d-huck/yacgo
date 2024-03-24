@@ -138,6 +138,12 @@ def make_args():
         help="Device for inference/training. Defaults to CUDA, MPS recommended on MacOS",
     )
     parser.add_argument(
+        "--epoch",
+        type=int,
+        default=0,
+        help="Starting epoch for training. Defaults to 0 to start training from scratch",
+    )
+    parser.add_argument(
         "--model_size",
         type=str,
         default="S0",
@@ -171,7 +177,7 @@ def make_args():
     parser.add_argument(
         "--refill_buffer",
         type=bool,
-        default=False,
+        default=True,
         help="Whether to refill the replay buffer after training on a state. Defaults to False",
     )
 
@@ -263,9 +269,15 @@ def make_args():
         "--num_games", type=int, default=8, help="Number of games to play"
     )
     parser.add_argument(
+        "--num_comp_games",
+        type=int,
+        default=400,
+        help="Number of games to play for competition",
+    )
+    parser.add_argument(
         "--komi",
         type=float,
-        default=0.5,
+        default=0.0,
         help="Komi for Go game. Defaults to 0.5 to avoid draws, giving white slight advantage",
     )
     parser.add_argument(
