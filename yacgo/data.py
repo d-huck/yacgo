@@ -257,7 +257,10 @@ class DataBroker(object):
         self.min_size = (
             args.training_batch_size
             if not self.refill_buffer
-            else 32 * args.training_batch_size
+            else 16 * args.training_batch_size
+        )
+        self.max_priority = (
+            self.batch_size * args.training_steps_per_epoch * HIGH_PRIORITY * 2
         )
 
     def get_batch(self) -> TrainingBatch:
@@ -284,8 +287,11 @@ class DataBroker(object):
             states.append(data.state)
             values.append(data.value)
             policies.append(data.policy)
-            if self.refill_buffer:
-                data.priority += HIGH_PRIORITY  # put at the end of the queue
+            if self.refill_buffer and data.priority < self.max_priority:
+                # put at the end of the queue and add some randomization of order
+                data.priority += (
+                    HIGH_PRIORITY + randint(-HIGH_PRIORITY, HIGH_PRIORITY) // 4
+                )
                 self.replay_buffer.put(data)
             count += 1
 
@@ -383,7 +389,11 @@ class DataBroker(object):
                 pass
             except KeyboardInterrupt:
                 break
-            print("Data Buffer size: ", self.replay_buffer.qsize(), end="\r")
+            print(
+                "Data Buffer size: ",
+                self.replay_buffer.qsize(),
+                end="                                       \r",
+            )
         print(
             f"Databroker has {self.replay_buffer.qsize()} items in the queue, dumping to disk..."
         )
