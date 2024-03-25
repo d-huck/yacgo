@@ -266,16 +266,17 @@ class DataBroker(object):
         pol_pass = policy[-1]
         policy_1d = policy[:-1]
         policy_2d = np.reshape(policy_1d, (state.shape[1], state.shape[1]))
+        print(policy_2d)
 
         orientation = np.random.randint(0, 8)
         if (orientation >> 0) % 2:
             # Horizontal flip
             state = np.flip(state, 2)
-            policy_2d = np.flip(policy_2d, 2)
+            policy_2d = np.flip(policy_2d, 1)
         if (orientation >> 1) % 2:
             # Vertical flip
             state = np.flip(state, 1)
-            policy_2d = np.flip(policy_2d, 1)
+            policy_2d = np.flip(policy_2d, 0)
         if (orientation >> 2) % 2:
             # Rotate 90 degrees
             state = np.rot90(state, axes=(1, 2))
@@ -312,6 +313,7 @@ class DataBroker(object):
                 state, value, policy = DataBroker.random_symmetry(data.state, data.value, data.policy)
             else:
                 state, value, policy = data.state, data.value, data.policy
+
             states.append(state)
             values.append(value)
             policies.append(policy)

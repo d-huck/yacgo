@@ -90,7 +90,7 @@ class MCTSNode:
             )  # TODO: Can we remove invalid moves from channel features?
             self.value = self.value * game.turn_pm(self.state)
             self.policy *= self.valid_moves
-            e_x = np.exp(self.policy / (self.search.args.softmax_temp if self == self.search.root and self.search.noise else 1))
+            e_x = np.exp(self.policy / (self.search.softmax_temp if self == self.search.root and self.search.noise else 1))
             self.policy = e_x / np.sum(e_x)
             self.terminal = False
 
