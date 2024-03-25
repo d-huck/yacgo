@@ -280,7 +280,7 @@ class DataBroker(object):
         if (orientation >> 2) % 2:
             # Rotate 90 degrees
             state = np.rot90(state, axes=(1, 2))
-            policy_2d = np.rot90(policy_2d, axes=(1, 2))
+            policy_2d = np.rot90(policy_2d, axes=(0, 1))
 
         policy_1d = np.ndarray.flatten(policy_2d)
         policy = np.append(policy_1d, pol_pass)
