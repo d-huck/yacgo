@@ -72,7 +72,7 @@ class ModelCompetition:
     If either model is None, a random player will be used.
     """
 
-    def __init__(self, model1: int, model2: int, args, n_workers=16):
+    def __init__(self, model1: int, model2: int, args):
         self.board_size = args.board_size
         self.model1 = model1
         self.model2 = model2
@@ -83,7 +83,7 @@ class ModelCompetition:
             total=1, unit="game", postfix={"score": 0.0}, smoothing=0.001, leave=False
         )
         self.lock = Lock()
-        self.n_workers = n_workers
+        self.n_workers = args.num_games
         self.scores = []
 
     def compete(self, num_games=1) -> CompetitionResult:
@@ -101,7 +101,7 @@ class ModelCompetition:
 
             self.pbar.set_description("Running Games")
             self.pbar.reset(total=num_games)
-
+            n_workers = min(self.n_workers, num_games // 2)
             raw_bw_results = []
             raw_wb_results = []
             bw_args = [
@@ -112,7 +112,7 @@ class ModelCompetition:
                 (self.model2, self.model1, self.args, self.komi)
                 for _ in range(wb_games)
             ]
-            with Pool(self.n_workers) as p:
+            with Pool(n_workers) as p:
                 for bw_result in p.imap_unordered(play_game, bw_args):
                     raw_bw_results.append(bw_result)
                     self.scores.append(bw_result)

@@ -71,6 +71,7 @@ def trainer_worker(args):
     old_model = args.model_path
     epoch = args.epoch
     print("Starting training loop...")
+    restart = True
     while True:
         try:
             model = None
@@ -82,7 +83,6 @@ def trainer_worker(args):
                     args.inference_server_port + args.num_servers,
                 )
             )
-            print("Ports", ports)
             for port in ports:
                 servers.append(
                     Process(
@@ -113,18 +113,19 @@ def trainer_worker(args):
             trainer.run(epoch)
             model = trainer.save_pretrained(iter=epoch)
 
-            # shutdown infererers
             for server in servers:
                 server.terminate()
                 server.join()
-
             for game in games:
                 game.terminate()
                 game.join()
 
+            del games
+            del servers
+
             # run the competition
             if old_model is not None:
-                servers = [
+                comp_servers = [
                     Process(
                         target=inference_worker,
                         args=(OLD_MODEL_PORT, args, old_model),
@@ -137,38 +138,40 @@ def trainer_worker(args):
                     ),
                 ]
             else:
-                servers = [
+                comp_servers = [
                     Process(
                         target=inference_worker,
                         args=(NEW_MODEL_PORT, args, model),
                         daemon=True,
                     ),
                 ]
-            for server in servers:
+            for server in comp_servers:
                 server.start()
             if old_model is not None:
-                comp = ModelCompetition(
-                    NEW_MODEL_PORT, OLD_MODEL_PORT, args, n_workers=args.num_games
-                )
+                comp = ModelCompetition(NEW_MODEL_PORT, OLD_MODEL_PORT, args)
             else:
-                comp = ModelCompetition(
-                    NEW_MODEL_PORT, None, args, n_workers=args.num_games
-                )
+                comp = ModelCompetition(NEW_MODEL_PORT, None, args)
             result = comp.compete(num_games=args.num_comp_games)
+            print("Competition result:", result.probs)
             if result.probs[0] >= 0.55:
                 old_model = model
                 trainer.reset_data()
-                iter += 1
+                epoch += 1
+                restart = True
             else:
-                trainer.load_pretrained(old_model)
+                restart = False
                 os.remove(model)
-            for server in servers:
+            for server in comp_servers:
                 server.terminate()
                 server.join()
             del comp
         except KeyboardInterrupt:
             print("Quitting training, closing sockets...")
             for server in servers:
+                if server is not None:
+                    server.terminate()
+                    server.join()
+            for server in comp_servers:
                 if server is not None:
                     server.terminate()
                     server.join()
