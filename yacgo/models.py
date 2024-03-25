@@ -91,7 +91,7 @@ class ViTWrapper(object):
         """
         self.model.load_state_dict(torch.load(path, map_location=self.device))
 
-    def save_pretrained(self, path: str = None, iter: str = None):
+    def save_pretrained(self, path: str = None, epoch: str = None):
         """
         Save pretrained weights.
 
@@ -107,7 +107,7 @@ class ViTWrapper(object):
         if iter is None:
             iter = 0
         os.makedirs(path, exist_ok=True)
-        model_name = f"{self.model_size}-bs{self.board_size}-nc{self.n_chans}-epoch-{iter:03d}.pth"
+        model_name = f"{self.model_size}-bs{self.board_size}-nc{self.n_chans}-epoch-{epoch:03d}.pth"
         out = os.path.join(path, model_name)
         torch.save(self.model.state_dict(), out)
 
@@ -320,27 +320,27 @@ class Trainer(ViTWrapper, DataTrainClientMixin):
         Runs the trainer indefinitely. Expects to receive a batch of inputs and
         """
         losses = []
-        try:
-            pbar = tqdm(
-                desc=f"Training epoch {epoch}", total=self.training_steps, leave=False
-            )
-            for i in range(self.training_steps):
+        # try:
+        pbar = tqdm(
+            desc=f"Training epoch {epoch}", total=self.training_steps, leave=False
+        )
+        for i in range(self.training_steps):
+            batch = self.get_batch()
+            while batch.batch_size == 0:
+                time.sleep(5)
                 batch = self.get_batch()
-                while batch.batch_size == 0:
-                    time.sleep(5)
-                    batch = self.get_batch()
 
-                loss = self.train_step(batch.states, batch.policies, batch.values)
-                losses.append(loss)
-                avg = sum(losses) / len(losses)
-                pbar.update(1)
-                pbar.set_postfix({"Loss": f"{avg:04.4f}"})
-                if len(losses) > 10:
-                    _ = losses.pop(0)
-        except KeyboardInterrupt:
-            self.destroy()
-            print("Trainer has quit")
-            pass
+            loss = self.train_step(batch.states, batch.policies, batch.values)
+            losses.append(loss)
+            avg = sum(losses) / len(losses)
+            pbar.update(1)
+            pbar.set_postfix({"Loss": f"{avg:04.4f}"})
+            if len(losses) > 10:
+                _ = losses.pop(0)
+        # except KeyboardInterrupt:
+        #     self.destroy()
+        #     print("Trainer has quit")
+        #     pass
 
 
 class ModelServerMixin:
