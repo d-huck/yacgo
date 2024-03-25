@@ -277,7 +277,7 @@ def make_args():
     parser.add_argument(
         "--komi",
         type=float,
-        default=0.0,
+        default=0.5,
         help="Komi for Go game. Defaults to 0.5 to avoid draws, giving white slight advantage",
     )
     parser.add_argument(
@@ -325,6 +325,18 @@ def make_args():
         type=bool,
         default=True,
         help="Whether to sample from Direchlet noise in MCTS when generating games. Defaults to False",
+    )
+    parser.add_argument(
+        "--softmax_temp",
+        type=float,
+        default=1.2,
+        help="softmax temp applied to policy at root during training",
+    )
+    parser.add_argument(
+        "--train_random_symmetry",
+        type=bool,
+        default=True,
+        help="Whether to apply random symmetries to states during training",
     )
 
     args = parser.parse_args()

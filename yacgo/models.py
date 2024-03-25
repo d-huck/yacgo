@@ -121,7 +121,7 @@ class InferenceRandom(Model):
         pass
 
     def forward(self, inputs):
-        return np.random.random(), np.random.random(game.action_size(inputs))
+        return np.random.random() * 2 - 1, np.random.random(game.action_size(inputs))
 
 
 class InferenceEqual(Model):

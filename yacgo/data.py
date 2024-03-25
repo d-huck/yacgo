@@ -262,6 +262,33 @@ class DataBroker(object):
         self.max_priority = (
             self.batch_size * args.training_steps_per_epoch * HIGH_PRIORITY * 2
         )
+        self.train_random_symmetry = args.train_random_symmetry
+
+    @staticmethod
+    def random_symmetry(state, value, policy):
+        pol_pass = policy[-1]
+        policy_1d = policy[:-1]
+        policy_2d = np.reshape(policy_1d, (state.shape[1], state.shape[1]))
+        print(policy_2d)
+
+        orientation = np.random.randint(0, 8)
+        if (orientation >> 0) % 2:
+            # Horizontal flip
+            state = np.flip(state, 2)
+            policy_2d = np.flip(policy_2d, 1)
+        if (orientation >> 1) % 2:
+            # Vertical flip
+            state = np.flip(state, 1)
+            policy_2d = np.flip(policy_2d, 0)
+        if (orientation >> 2) % 2:
+            # Rotate 90 degrees
+            state = np.rot90(state, axes=(1, 2))
+            policy_2d = np.rot90(policy_2d, axes=(0, 1))
+
+        policy_1d = np.ndarray.flatten(policy_2d)
+        policy = np.append(policy_1d, pol_pass)
+        return state, value, policy
+
 
     def get_batch(self) -> TrainingBatch:
         """Returns a single batch from the replay buffer
@@ -284,6 +311,17 @@ class DataBroker(object):
                 data = self.replay_buffer.get(block=False)
             except Empty:  # python can be so gross sometimes
                 break
+            
+            if self.train_random_symmetry:
+                state, value, policy = DataBroker.random_symmetry(data.state, data.value, data.policy)
+            else:
+                state, value, policy = data.state, data.value, data.policy
+
+            states.append(state)
+            values.append(value)
+            policies.append(policy)
+            if self.refill_buffer:
+                data.priority += HIGH_PRIORITY  # put at the end of the queue
             states.append(data.state)
             values.append(data.value)
             policies.append(data.policy)
