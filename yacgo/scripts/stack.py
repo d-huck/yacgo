@@ -111,7 +111,7 @@ def trainer_worker(args):
 
             # run a training run and save the model
             trainer.run(epoch)
-            model = trainer.save_pretrained(iter=epoch)
+            model = trainer.save_pretrained(epoch=epoch)
 
             for server in servers:
                 server.terminate()
@@ -181,6 +181,7 @@ def trainer_worker(args):
                     game.join()
             if model is not None:
                 os.remove(model)  # don't store a bad model
+            trainer.destroy()
             break
 
 
