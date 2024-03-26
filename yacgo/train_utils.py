@@ -59,8 +59,6 @@ class GameGenerator(DataGameClientMixin):
 
             winner = game.winning(state)
             for d in data:
-                # TODO: ensure DATA_DTYPE all the way through
-                d.value = DATA_DTYPE(winner)  # * game.turn_pm(d.state))
                 self.deposit(d)
 
         except KeyboardInterrupt:

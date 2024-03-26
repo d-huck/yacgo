@@ -347,7 +347,6 @@ class Trainer(ViTWrapper, DataTrainClientMixin):
         Runs the trainer indefinitely. Expects to receive a batch of inputs and
         """
         losses = []
-        # try:
         pbar = tqdm(
             desc=f"Training epoch {epoch}", total=self.training_steps, leave=False
         )
@@ -364,10 +363,6 @@ class Trainer(ViTWrapper, DataTrainClientMixin):
             pbar.set_postfix({"Loss": f"{avg:04.4f}"})
             if len(losses) > 10:
                 _ = losses.pop(0)
-        # except KeyboardInterrupt:
-        #     self.destroy()
-        #     print("Trainer has quit")
-        #     pass
 
 
 class ModelServerMixin:
