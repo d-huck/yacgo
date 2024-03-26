@@ -257,7 +257,7 @@ class DataBroker(object):
         self.min_size = (
             args.training_batch_size
             if not self.refill_buffer
-            else 16 * args.training_batch_size
+            else 8 * args.training_batch_size
         )
         self.max_priority = (
             self.batch_size * args.training_steps_per_epoch * HIGH_PRIORITY * 2

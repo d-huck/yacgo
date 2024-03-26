@@ -121,6 +121,7 @@ def trainer_worker(args):
         )
     )
     print("Starting gameplay workers...")
+    display = True
     for i in range(args.num_games):
         games.append(
             Process(
@@ -130,10 +131,11 @@ def trainer_worker(args):
             )
         )
         display &= False
-        for i, game in enumerate(games):
-            game.start()
-            if i % 16 == 15:  # slow spin up of the games
-                time.sleep(5)
+    for i, game in enumerate(games):
+        game.start()
+        if i % 16 == 15:  # slow spin up of the games
+            time.sleep(5)
+
     print("Starting training loop...")
     while True:
         try:
@@ -151,7 +153,6 @@ def trainer_worker(args):
 
             for server in servers:
                 server.start()
-            display = True
 
             # run a training run and save the model
             trainer.run(epoch)
