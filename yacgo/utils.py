@@ -347,6 +347,9 @@ def make_args():
 
     args = parser.parse_args()
 
+    if args.num_games < args.num_game_processes:
+        args.num_game_processes = args.num_games
+
     # Do any sanitation here
     if args.data_cache_dir is not None and not args.data_cache_dir.endswith("/"):
         args.data_cache_dir += "/"
