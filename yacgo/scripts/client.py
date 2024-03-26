@@ -56,7 +56,9 @@ def main():
         )
         for i in range(args.num_game_processes):
             games.append(
-                Process(target=gameplay_worker, args=(ports, i, args), daemon=True)
+                Process(
+                    target=gameplay_worker, args=(ports, i, True, args), daemon=True
+                )
             )
         print("Starting games...")
         for i, game in enumerate(games):
