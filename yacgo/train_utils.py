@@ -69,7 +69,7 @@ class GameGenerator(DataGameClientMixin):
 
     def sim_games(self, num_games=1):
         data: List[TrainState] = []
-        for _ in num_games:
+        for _ in range(num_games):
             data.extend(self.sim_game())
         return data
 
