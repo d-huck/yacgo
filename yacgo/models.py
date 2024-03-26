@@ -104,8 +104,8 @@ class ViTWrapper(object):
         """
         if path is None:
             path = f"models/"
-        if iter is None:
-            iter = 0
+        if epoch is None:
+            epoch = 0
         os.makedirs(path, exist_ok=True)
         model_name = f"{self.model_size}-bs{self.board_size}-nc{self.n_chans}-epoch-{epoch:03d}.pth"
         out = os.path.join(path, model_name)
