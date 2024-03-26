@@ -7,7 +7,6 @@ saving models, as well as interfacing with the ZMQ.
 import os
 import random
 import time
-import uuid
 from typing import Tuple
 
 import numpy as np
@@ -15,7 +14,7 @@ import torch
 from tqdm.auto import tqdm
 import zmq
 
-from yacgo.data import DataTrainClientMixin, State, Inference, TrainState
+from yacgo.data import DataTrainClientMixin, State, Inference, TrainState, DATA_DTYPE
 from yacgo.go import game
 from yacgo.vit import (
     EfficientFormer_depth,
@@ -98,7 +97,6 @@ class ViTWrapper(object):
         """
         Save pretrained weights.
 
-        TODO: please verify this method
         Args:
             path (str): path to save the weights
 
@@ -106,7 +104,7 @@ class ViTWrapper(object):
             NotImplementedError: _description_
         """
         if path is None:
-            path = f"models/"
+            path = "models/"
         if epoch is None:
             epoch = 0
         os.makedirs(path, exist_ok=True)
@@ -124,7 +122,9 @@ class InferenceRandom(Model):
         pass
 
     def forward(self, inputs):
-        return np.random.random() * 2 - 1, np.random.random(game.action_size(inputs))
+        return DATA_DTYPE(np.random.random() * 2 - 1), np.random.random(
+            game.action_size(inputs)
+        ).astype(DATA_DTYPE)
 
 
 class InferenceEqual(Model):
@@ -176,6 +176,7 @@ class InferenceClient(Model):
         self.ports = ports
 
     def try_request(self, req):
+        """Reliable pattern for sending requests to the server. Will retry on failure indefinitely"""
         random.shuffle(self.ports)
         for port in self.ports:
             server = f"tcp://{self.server_address}:{port}"
@@ -230,7 +231,6 @@ class InferenceServer(ViTWrapper):
         self.socket.bind(f"tcp://*:{self.port}")
         self.socket.setsockopt(zmq.LINGER, 0)
 
-        # TODO: compare with immediate time out
         self.socket.setsockopt(zmq.RCVTIMEO, 0)
 
         self.batch_size = args.inference_batch_size
@@ -350,7 +350,7 @@ class Trainer(ViTWrapper, DataTrainClientMixin):
         pbar = tqdm(
             desc=f"Training epoch {epoch}", total=self.training_steps, leave=False
         )
-        for i in range(self.training_steps):
+        for _ in range(self.training_steps):
             batch = self.get_batch()
             while batch.batch_size == 0:
                 time.sleep(5)
