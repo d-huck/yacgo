@@ -116,11 +116,7 @@ def trainer_worker(args):
             for server in servers:
                 server.terminate()
                 server.join()
-            for game in games:
-                game.terminate()
-                game.join()
 
-            del games
             del servers
 
             # run the competition
@@ -165,9 +161,10 @@ def trainer_worker(args):
                 server.terminate()
                 server.join()
             del comp
-            del comp_servers
+            comp_servers = []
         except KeyboardInterrupt:
             print("Quitting training, closing sockets...")
+        finally:
             for server in servers:
                 if server is not None:
                     server.terminate()
