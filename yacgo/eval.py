@@ -33,7 +33,7 @@ def play_game(game_args):
         _type_: _description_
     """
     try:
-        model1, model2, args, komi = game_args
+        model1, model2, args, komi, order = game_args
 
         if model1 is None:
             p1 = RandomPlayer(govars.BLACK)
@@ -49,9 +49,9 @@ def play_game(game_args):
         g = Game(args.board_size, p1, p2, komi)
 
         result = g.play_full()
-        return result
+        return order, result
     except KeyboardInterrupt:
-        return 0
+        return order, 0
 
 
 @dataclass
@@ -99,30 +99,27 @@ class ModelCompetition:
             bw_games = num_games // 2
             wb_games = num_games - bw_games
 
-            self.pbar.set_description("Running Games")
+            self.pbar.set_description("Running Competition")
             self.pbar.reset(total=num_games)
-            n_workers = min(self.n_workers, num_games // 2)
+            n_workers = min(self.n_workers, num_games)
             raw_bw_results = []
             raw_wb_results = []
-            bw_args = [
-                (self.model1, self.model2, self.args, self.komi)
+            comp_args = [
+                (self.model1, self.model2, self.args, self.komi, "bw")
                 for _ in range(bw_games)
             ]
-            wb_args = [
-                (self.model2, self.model1, self.args, self.komi)
+            comp_args += [
+                (self.model2, self.model1, self.args, self.komi, "wb")
                 for _ in range(wb_games)
             ]
             with Pool(n_workers) as p:
-                for bw_result in p.imap_unordered(play_game, bw_args):
-                    raw_bw_results.append(bw_result)
-                    self.scores.append(bw_result)
-                    self.pbar.update(1)
-                    self.pbar.set_postfix({"score": sum(self.scores)})
-
-                self.pbar.set_description("White vs Black")
-                for wb_result in p.imap_unordered(play_game, wb_args):
-                    raw_wb_results.append(wb_result)
-                    self.scores.append(wb_result * -1)
+                for order, result in p.imap_unordered(play_game, comp_args):
+                    if order == "bw":
+                        raw_bw_results.append(result)
+                        self.scores.append(result)
+                    elif order == "wb":
+                        raw_wb_results.append(result)
+                        self.scores.append(result * -1)
                     self.pbar.update(1)
                     self.pbar.set_postfix({"score": sum(self.scores)})
             self.pbar.close()
@@ -154,3 +151,13 @@ class ModelCompetition:
         return CompetitionResult(
             score, probs, games, bw_wins, raw_bw_results, raw_wb_results
         )
+
+
+if __name__ == "__main__":
+    from yacgo.utils import make_args
+
+    args = make_args()
+
+    comp = ModelCompetition(None, None, args)
+    result = comp.compete(num_games=1024)
+    print(result)
