@@ -249,7 +249,7 @@ def make_args():
     parser.add_argument(
         "--data_cache_dir",
         type=str,
-        default="data_cache/",
+        default=".data_cache/",
         help="Directory to cache game data. Defaults to None which does not cache",
     )
     parser.add_argument(
@@ -357,6 +357,27 @@ def make_args():
         help="Whether to apply random symmetries to states during training",
     )
 
+    # Misc
+    parser.add_argument(
+        "--wandb",
+        type=bool,
+        default=True,
+        help="Whether to log training to wandb. Defaults to True",
+    )
+
+    parser.add_argument(
+        "--wandb_project",
+        type=str,
+        default="yacgo",
+        help="Wandb project name. Defaults to yacgo",
+    )
+    parser.add_argument(
+        "--wandb_group",
+        type=str,
+        default=None,
+        help="Wandb entity name. Defaults to None which will create a random group name",
+    )
+
     args = parser.parse_args()
 
     if args.num_games < args.num_game_processes:
@@ -380,3 +401,16 @@ def set_args(**kwargs):
         d[k] = v
 
     return args
+
+
+def model_name_to_epoch(model: str) -> int:
+    """Converts a string number with a zero prefix to an integer.
+    Assumes the model is named in the format "xxxxx-xxx-xx-0000.pth"
+
+    Args:
+        num (str): string number with a zero prefix
+
+    Returns:
+        int: integer representation of the string number
+    """
+    return int(model.split("-")[-1][:-4].lstrip("0"))
