@@ -13,6 +13,10 @@ import torch
 from yacgo.data import TORCH_DTYPE, DATA_DTYPE  # pylint: disable=unused-import
 
 
+def build_logger():
+    pass
+
+
 def init_signals():
     """Ignore SIGINT in child workers."""
     signal.signal(signal.SIGINT, signal.SIG_IGN)
@@ -245,7 +249,7 @@ def make_args():
     parser.add_argument(
         "--data_cache_dir",
         type=str,
-        default=None,
+        default=".data_cache/",
         help="Directory to cache game data. Defaults to None which does not cache",
     )
     parser.add_argument(
@@ -273,6 +277,14 @@ def make_args():
     # Game / MCTS Settings
     parser.add_argument(
         "--num_games", type=int, default=8, help="Number of games to play"
+    )
+    parser.add_argument(
+        "--num_game_processes",
+        type=int,
+        default=16,
+        help=(
+            "Number of game processes. Each process will run num_games // num_processes threads "
+        ),
     )
     parser.add_argument(
         "--num_comp_games",
@@ -345,7 +357,31 @@ def make_args():
         help="Whether to apply random symmetries to states during training",
     )
 
+    # Misc
+    parser.add_argument(
+        "--wandb",
+        type=bool,
+        default=True,
+        help="Whether to log training to wandb. Defaults to True",
+    )
+
+    parser.add_argument(
+        "--wandb_project",
+        type=str,
+        default="yacgo",
+        help="Wandb project name. Defaults to yacgo",
+    )
+    parser.add_argument(
+        "--wandb_group",
+        type=str,
+        default=None,
+        help="Wandb entity name. Defaults to None which will create a random group name",
+    )
+
     args = parser.parse_args()
+
+    if args.num_games < args.num_game_processes:
+        args.num_game_processes = args.num_games
 
     # Do any sanitation here
     if args.data_cache_dir is not None and not args.data_cache_dir.endswith("/"):
@@ -365,3 +401,16 @@ def set_args(**kwargs):
         d[k] = v
 
     return args
+
+
+def model_name_to_epoch(model: str) -> int:
+    """Converts a string number with a zero prefix to an integer.
+    Assumes the model is named in the format "xxxxx-xxx-xx-0000.pth"
+
+    Args:
+        num (str): string number with a zero prefix
+
+    Returns:
+        int: integer representation of the string number
+    """
+    return int(model.split("-")[-1][:-4].lstrip("0"))

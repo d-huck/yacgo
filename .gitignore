@@ -161,4 +161,6 @@ cython_debug/
 
 data/
 models/
+.data_cache/
+wandb/
 .vscode/settings.json

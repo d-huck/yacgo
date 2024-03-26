@@ -2,6 +2,7 @@
 Runs n GamePlay workers.
 """
 
+from concurrent.futures import ThreadPoolExecutor
 import multiprocessing as mp
 import time
 from multiprocessing import Process
@@ -11,26 +12,31 @@ from yacgo.train_utils import GameGenerator
 from yacgo.utils import make_args
 
 
-def gameplay_worker(ports, i, args):
+def gameplay_worker(ports, i, display, args):
     """Wrapper around a simple gameplay worker.
 
     Args:
         port (int): Port server is listening on.
         args (dict): args dict.
     """
-    model = InferenceClient(ports, args.inference_server_address)
-    game_gen = GameGenerator(model, args, display=True)
-    print(f"{i:03d}: Starting Game Generation...")
-    # data = game_gen.sim_data(1024)
-    # for d in data:
-    #     data_client.deposit(d)
-    try:
-        while True:
-            game_gen.sim_game()
-            print(f"{i:03d}: Game finished!")
-    except KeyboardInterrupt:
-        print("Quitting game generation, closing sockets...")
-        game_gen.destroy()
+
+    def game_play_thread():
+        model = InferenceClient(ports, args.inference_server_address)
+        game_gen = GameGenerator(model, args, display=display)
+        # data = game_gen.sim_data(1024)
+        # for d in data:
+        #     data_client.deposit(d)
+        try:
+            while True:
+                game_gen.sim_game()
+        except KeyboardInterrupt:
+            print("Quitting game generation, closing sockets...")
+            game_gen.destroy()
+
+    n_threads = args.num_games // args.num_game_processes
+    with ThreadPoolExecutor(max_workers=n_threads) as executor:
+        for _ in range(n_threads):
+            executor.submit(game_play_thread)
 
 
 def main():
@@ -39,7 +45,7 @@ def main():
     """
     args = make_args()
 
-    mp.set_start_method("fork")
+    mp.set_start_method("spawn")
     try:
         games = []
         ports = list(
@@ -48,13 +54,15 @@ def main():
                 args.inference_server_port + args.num_servers,
             )
         )
-        for i in range(args.num_games):
+        for i in range(args.num_game_processes):
             games.append(
-                Process(target=gameplay_worker, args=(ports, i, args), daemon=True)
+                Process(
+                    target=gameplay_worker, args=(ports, i, True, args), daemon=True
+                )
             )
         print("Starting games...")
         for i, game in enumerate(games):
-            # time.sleep(1)  # be nice to your cpu
+            time.sleep(1)  # be nice to your cpu
             game.start()
 
         for game in games:
