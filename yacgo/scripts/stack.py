@@ -2,20 +2,25 @@
 Runs the entire yacgo stack: 1 Trainer, 1 DataBroker, n InferenceServers, k Gameplay clients.
 """
 
-import os
-import time
 import multiprocessing as mp
+import os
+import atexit
+import signal
+import time
 from concurrent.futures import ThreadPoolExecutor
 from multiprocessing import Process
+
+import randomname
+import wandb
 
 from yacgo.data import DataBroker, DataGameClientMixin
 from yacgo.eval import ModelCompetition
 from yacgo.models import InferenceClient, InferenceServer, Trainer
 from yacgo.train_utils import GameGenerator
-from yacgo.utils import make_args
+from yacgo.utils import make_args, model_name_to_epoch
 
-OLD_MODEL_PORT = 31337
-NEW_MODEL_PORT = 31338
+BEST_MODEL_PORT = 31337
+CANDIDATE_PORT = 31338
 
 
 def inference_worker(port, args, model):
@@ -25,6 +30,7 @@ def inference_worker(port, args, model):
         port (int): Port server is listening on.
         args (dict): args dict.
     """
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
     server = InferenceServer(port, args, model)
     server.run()
 
@@ -36,6 +42,14 @@ def databroker_worker(args):
         port (int): Port server is listening on.
         args (dict): args dict.
     """
+    if args.wandb:
+        wandb.init(
+            project=args.wandb_project,
+            group=args.wandb_group,
+            job_type="replay_buffer",
+            config=args,
+        )
+
     broker = DataBroker(args)
     broker.run()
 
@@ -47,13 +61,12 @@ def gameplay_worker(ports, i, display, args):
         port (int): Port server is listening on.
         args (dict): args dict.
     """
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
 
     def game_play_thread():
         model = InferenceClient(ports, args.inference_server_address)
         game_gen = GameGenerator(model, args, display=display)
-        # data = game_gen.sim_data(1024)
-        # for d in data:
-        #     data_client.deposit(d)
+
         try:
             while True:
                 game_gen.sim_game()
@@ -67,7 +80,7 @@ def gameplay_worker(ports, i, display, args):
             executor.submit(game_play_thread)
 
 
-def competition_worker(model, old_model, args):
+def competition_worker(model, best_model, return_val, args):
     """Wrapper around a simple competition worker.
 
     Args:
@@ -75,125 +88,117 @@ def competition_worker(model, old_model, args):
         args (dict): args dict.
     """
     # run the competition
-    if old_model is not None:
-        comp_servers = [
+    servers = []
+
+    def close():
+        for server in servers:
+            if server is not None:
+                server.terminate()
+                server.join()
+
+    atexit.register(close)
+
+    if best_model is not None:
+        servers = [
             Process(
                 target=inference_worker,
-                args=(OLD_MODEL_PORT, args, old_model),
+                args=(BEST_MODEL_PORT, args, best_model),
                 daemon=True,
             ),
             Process(
                 target=inference_worker,
-                args=(NEW_MODEL_PORT, args, model),
+                args=(CANDIDATE_PORT, args, model),
                 daemon=True,
             ),
         ]
     else:
-        comp_servers = [
+        servers = [
             Process(
                 target=inference_worker,
-                args=(NEW_MODEL_PORT, args, model),
+                args=(CANDIDATE_PORT, args, model),
                 daemon=True,
             ),
         ]
-    for server in comp_servers:
+    for server in servers:
         server.start()
-    if old_model is not None:
-        comp = ModelCompetition(NEW_MODEL_PORT, OLD_MODEL_PORT, args)
+    if best_model is not None:
+        comp = ModelCompetition(CANDIDATE_PORT, BEST_MODEL_PORT, args)
     else:
-        comp = ModelCompetition(NEW_MODEL_PORT, None, args)
+        comp = ModelCompetition(CANDIDATE_PORT, None, args)
     result = comp.compete(num_games=args.num_comp_games)
-    print("Competition result:", result.probs)
-    for server in comp_servers:
+
+    return_val.value = result.probs[0]
+    for server in servers:
         server.terminate()
         server.join()
     return result
 
 
-def trainer_worker(args):
+def trainer(ports, args):
     """Wrapper around a simple trainer worker.
 
     Args:
         args (dict): args dict.
     """
-    # databroker = Process(target=databroker_worker, args=(args,), daemon=True)
-    # databroker.start()
+
     trainer = Trainer(args)
-    old_model = args.model_path
-    epoch = args.epoch
-    games = []
-    ports = list(
-        range(
-            args.inference_server_port,
-            args.inference_server_port + args.num_servers,
-        )
-    )
-    print("Starting gameplay workers...")
-    display = True
-    for i in range(args.num_game_processes):
-        games.append(
-            Process(
-                target=gameplay_worker,
-                args=(ports, i, display, args),
-                daemon=True,
-            )
-        )
-        display &= False
-    for i, game in enumerate(games):
-        game.start()
-        if i % 16 == 15:  # slow spin up of the games
-            time.sleep(5)
-
+    best_model = args.model_path
+    if best_model is not None:
+        args.epoch = model_name_to_epoch(best_model) + 1
+    else:
+        epoch = args.epoch
     print("Starting training loop...")
-    while True:
-        try:
-            model = None
-            servers = []
+    servers = []
 
-            for port in ports:
-                servers.append(
-                    Process(
-                        target=inference_worker,
-                        args=(port, args, old_model),
-                        daemon=True,
-                    )
-                )
-
-            for server in servers:
-                server.start()
-
-            # run a training run and save the model
-            trainer.run(epoch)
-            model = trainer.save_pretrained(epoch=epoch)
-            for server in servers:
+    def close():
+        for server in servers:
+            if server is not None:
                 server.terminate()
                 server.join()
 
-            servers = []  # gc the old servers
-            result = competition_worker(model, old_model, args)
+    atexit.register(close)
+    manager = mp.Manager()
+    while True:
+        model = None
 
-            if result.probs[0] >= 0.55:
-                old_model = model
-                epoch += 1
-            else:
-                os.remove(model)
-        except KeyboardInterrupt:
-            print("Quitting training, closing sockets...")
+        for port in ports:
+            servers.append(
+                Process(
+                    target=inference_worker,
+                    args=(port, args, best_model),
+                    daemon=True,
+                )
+            )
 
-            for server in servers:
-                if server is not None:
-                    server.terminate()
-                    server.join()
-            for game in games:
-                if game is not None:
-                    game.terminate()
-                    game.join()
+        for server in servers:
+            server.start()
 
-            if model is not None:
-                os.remove(model)  # don't store a bad model
-            trainer.destroy()
+        # run a training run and save the model
+        trainer.run(epoch)
+        candidate = trainer.save_pretrained(candidate=True)
 
-            break
+        for server in servers:
+            server.terminate()
+            server.join()
+
+        servers = []  # gc the old servers
+        return_val = manager.Value(float, 0.0)
+        result = competition_worker(candidate, best_model, return_val, args)
+        if args.wandb:
+            wandb.log(
+                {
+                    "score": result.score,
+                    "new_model_win%": result.probs[0],
+                    "old_model_win%": result.probs[1],
+                    "epoch": epoch,
+                }
+            )
+        if os.path.exists(candidate):
+            os.remove(candidate)
+
+        if return_val.value >= 0.55:
+            best_model = trainer.save_pretrained(epoch=epoch)
+        epoch += 1
 
 
 def main():
@@ -202,15 +207,57 @@ def main():
     """
     mp.set_start_method("spawn")
     args = make_args()
+    if args.wandb:
+        # wandb.require("service")
+        if args.wandb_group is None:
+            args.wandb_group = randomname.get_name()
+        wandb.init(
+            project="yacgo", group=args.wandb_group, job_type="training", config=args
+        )
+    games = []
+    ports = list(
+        range(
+            args.inference_server_port,
+            args.inference_server_port + args.num_servers,
+        )
+    )
     try:
+        print("Starting gameplay workers...")
+        display = True
+        for i in range(args.num_game_processes):
+            games.append(
+                Process(
+                    target=gameplay_worker,
+                    args=(ports, i, display, args),
+                    daemon=True,
+                )
+            )
+            display &= False
+        for i, game in enumerate(games):
+            game.start()
+            if i % 16 == 15:  # slow spin up of the games
+                time.sleep(5)
+
+        # Start the databroker
+        databroker = Process(target=databroker_worker, args=(args,), daemon=True)
+        databroker.start()
+
         # Start the trainer
-        trainer = Process(target=trainer_worker, args=(args,))
-        trainer.start()
-        trainer.join()
+        trainer(ports, args)
+        databroker.terminate()
+        databroker.join()
 
     except KeyboardInterrupt:
         pass
     finally:
+        print("Terminating games...")
+        for game in games:
+            game.terminate()
+            game.join()
+        print("Terminating databroker...")
+        databroker.terminate()
+        databroker.join()
+        # wandb.finish()
         print("Exiting...")
 
 

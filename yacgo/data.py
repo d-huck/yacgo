@@ -26,6 +26,7 @@ from typing import Union
 import msgpack
 import numpy as np
 import torch
+import wandb
 import zmq
 
 DEPOSIT = 0
@@ -266,6 +267,8 @@ class DataBroker(object):
         )
         self.train_random_symmetry = args.train_random_symmetry
         self.forget_rate = args.forget_rate
+        self.wandb = args.wandb
+
         if self.cache_dir is not None:
             self.load_from_disk()
 
@@ -333,11 +336,6 @@ class DataBroker(object):
             states.append(state)
             values.append(value)
             policies.append(policy)
-            # if self.refill_buffer:
-            #     data.priority += HIGH_PRIORITY  # put at the end of the queue
-            # states.append(data.state)
-            # values.append(data.value)
-            # policies.append(data.policy)
 
             refill = True
             if data.priority > self.max_priority:
@@ -409,7 +407,7 @@ class DataBroker(object):
             self.dump_to_disk()
         self.replay_buffer = PriorityQueue()
 
-    def process_data(self, message):
+    def process_data(self, message, commit=False):
         """
         Unpacks data from a message and places it in the replay buffer
 
@@ -422,6 +420,13 @@ class DataBroker(object):
         example = TrainState.unpack(message)
         data = PrioritizedTrainState.from_train_state(example)
         self.replay_buffer.put(data)
+        if self.wandb:
+            wandb.log(
+                {
+                    "Replay Buffer Size": self.replay_buffer.qsize(),
+                },
+                commit=commit,
+            )
 
     def run(self):
         """
@@ -456,11 +461,7 @@ class DataBroker(object):
                 pass
             except (KeyboardInterrupt, SystemExit):
                 break
-            print(
-                "Data Buffer size: ",
-                self.replay_buffer.qsize(),
-                end="      \r",
-            )
+
 
 
 class DataGameClientMixin:
@@ -474,6 +475,11 @@ class DataGameClientMixin:
         self.data_socket.connect(
             f"tcp://{args.inference_server_address}:{args.databroker_port}"
         )
+
+        def close():
+            self.destroy()
+
+        atexit.register(close)
 
     def deposit(self, example: TrainState):
         """Deposits a single training example into the data broker"""
@@ -497,6 +503,11 @@ class DataTrainClientMixin:
         self.data_socket = self.data_context.socket(zmq.REQ)
         self.data_socket.setsockopt(zmq.IDENTITY, identity)
         self.data_socket.connect(f"tcp://localhost:{args.databroker_port}")
+
+        def close():
+            self.destroy()
+
+        atexit.register(close)
 
     def get_batch(
         self,
