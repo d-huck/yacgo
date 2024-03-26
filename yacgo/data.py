@@ -338,7 +338,12 @@ class DataBroker(object):
             # states.append(data.state)
             # values.append(data.value)
             # policies.append(data.policy)
-            if self.refill_buffer and np.random.rand() > self.forget_rate:
+
+            if (
+                self.refill_buffer
+                and data.priority < self.max_priority
+                and np.random.rand() > self.forget_rate
+            ):
                 # put at the end of the queue and add some randomization of order
                 data.priority += (
                     HIGH_PRIORITY + randint(-HIGH_PRIORITY, HIGH_PRIORITY) // 4
