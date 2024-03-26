@@ -3,10 +3,12 @@ Code for evaluating networks.
 """
 
 from dataclasses import dataclass
-from multiprocessing import Pool, Lock
+from multiprocessing import Lock, Pool
+import signal
 from typing import Tuple
 
 import numpy as np
+import wandb
 from tqdm.auto import tqdm
 
 from yacgo.game import Game
@@ -85,6 +87,7 @@ class ModelCompetition:
         self.lock = Lock()
         self.n_workers = args.num_games
         self.scores = []
+        self.wandb = args.wandb
 
     def compete(self, num_games=1) -> CompetitionResult:
         """Run competition between two models.
@@ -95,58 +98,55 @@ class ModelCompetition:
         Returns:
             CompetitionResult: results of the competition
         """
-        try:
-            bw_games = num_games // 2
-            wb_games = num_games - bw_games
+        bw_games = num_games // 2
+        wb_games = num_games - bw_games
 
-            self.pbar.set_description("Running Competition")
-            self.pbar.reset(total=num_games)
-            n_workers = min(self.n_workers, num_games)
-            raw_bw_results = []
-            raw_wb_results = []
-            comp_args = [
-                (self.model1, self.model2, self.args, self.komi, "bw")
-                for _ in range(bw_games)
-            ]
-            comp_args += [
-                (self.model2, self.model1, self.args, self.komi, "wb")
-                for _ in range(wb_games)
-            ]
-            with Pool(n_workers) as p:
-                for order, result in p.imap_unordered(play_game, comp_args):
-                    if order == "bw":
-                        raw_bw_results.append(result)
-                        self.scores.append(result)
-                    elif order == "wb":
-                        raw_wb_results.append(result)
-                        self.scores.append(result * -1)
-                    self.pbar.update(1)
-                    self.pbar.set_postfix({"score": sum(self.scores)})
-            self.pbar.close()
+        self.pbar.set_description("Running Competition")
+        self.pbar.reset(total=num_games)
+        n_workers = min(self.n_workers, num_games)
+        raw_bw_results = []
+        raw_wb_results = []
+        comp_args = [
+            (self.model1, self.model2, self.args, self.komi, "bw")
+            for _ in range(bw_games)
+        ]
+        comp_args += [
+            (self.model2, self.model1, self.args, self.komi, "wb")
+            for _ in range(wb_games)
+        ]
+        with Pool(n_workers) as p:
+            for order, result in p.imap_unordered(play_game, comp_args):
+                if order == "bw":
+                    raw_bw_results.append(result)
+                    self.scores.append(result)
+                elif order == "wb":
+                    raw_wb_results.append(result)
+                    self.scores.append(result * -1)
+                self.pbar.update(1)
+                self.pbar.set_postfix({"score": sum(self.scores)})
+        self.pbar.close()
 
-            raw_bw_results = np.array(raw_bw_results)
-            raw_wb_results = np.array(raw_wb_results)
-            score = np.sum(raw_bw_results) - np.sum(raw_wb_results)
-            games = np.concatenate((raw_bw_results, raw_wb_results * -1))
+        raw_bw_results = np.array(raw_bw_results)
+        raw_wb_results = np.array(raw_wb_results)
+        score = np.sum(raw_bw_results) - np.sum(raw_wb_results)
+        games = np.concatenate((raw_bw_results, raw_wb_results * -1))
 
-            probs = [
-                (np.count_nonzero(games == 1) / num_games),
-                (np.count_nonzero(games == -1) / num_games),
-            ]
-            bw_wins = [
-                (
-                    np.count_nonzero(raw_bw_results == 1)
-                    + np.count_nonzero(raw_wb_results == 1)
-                )
-                / num_games,
-                (
-                    np.count_nonzero(raw_bw_results == -1)
-                    + np.count_nonzero(raw_wb_results == -1)
-                )
-                / num_games,
-            ]
-        except KeyboardInterrupt:
-            return None
+        probs = [
+            (np.count_nonzero(games == 1) / num_games),
+            (np.count_nonzero(games == -1) / num_games),
+        ]
+        bw_wins = [
+            (
+                np.count_nonzero(raw_bw_results == 1)
+                + np.count_nonzero(raw_wb_results == 1)
+            )
+            / num_games,
+            (
+                np.count_nonzero(raw_bw_results == -1)
+                + np.count_nonzero(raw_wb_results == -1)
+            )
+            / num_games,
+        ]
 
         return CompetitionResult(
             score, probs, games, bw_wins, raw_bw_results, raw_wb_results
