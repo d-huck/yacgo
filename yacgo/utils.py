@@ -245,7 +245,7 @@ def make_args():
     parser.add_argument(
         "--data_cache_dir",
         type=str,
-        default=None,
+        default="data_cache/",
         help="Directory to cache game data. Defaults to None which does not cache",
     )
     parser.add_argument(
