@@ -165,6 +165,7 @@ def trainer_worker(args):
                 server.terminate()
                 server.join()
             del comp
+            del comp_servers
         except KeyboardInterrupt:
             print("Quitting training, closing sockets...")
             for server in servers:
