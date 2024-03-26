@@ -51,14 +51,14 @@ class TrainState:
         elif isinstance(value, list):
             value = np.array(value, dtype=DATA_DTYPE)
         if len(value.shape) == 0:
-            value = value.astype(DATA_DTYPE)
+            value = value
         elif len(value.shape) == 1 and value.shape[0] == 1:
-            value = value[0].astype(DATA_DTYPE)
+            value = value[0]
         else:
             raise ValueError("Value must be a single number")
-        self.state = state.astype(DATA_DTYPE).copy()
-        self.value = value.astype(DATA_DTYPE).copy()
-        self.policy = policy.astype(DATA_DTYPE).copy()
+        self.state = state
+        self.value = value
+        self.policy = policy
 
     def pack(self) -> bytearray:
         """Packs the TrainState into a zmq message.
@@ -263,13 +263,13 @@ class DataBroker(object):
             self.batch_size * args.training_steps_per_epoch * HIGH_PRIORITY * 2
         )
         self.train_random_symmetry = args.train_random_symmetry
+        self.forget_rate = args.forget_rate
 
     @staticmethod
     def random_symmetry(state, value, policy):
         pol_pass = policy[-1]
         policy_1d = policy[:-1]
         policy_2d = np.reshape(policy_1d, (state.shape[1], state.shape[1]))
-        print(policy_2d)
 
         orientation = np.random.randint(0, 8)
         if (orientation >> 0) % 2:
@@ -288,7 +288,6 @@ class DataBroker(object):
         policy_1d = np.ndarray.flatten(policy_2d)
         policy = np.append(policy_1d, pol_pass)
         return state, value, policy
-
 
     def get_batch(self) -> TrainingBatch:
         """Returns a single batch from the replay buffer
@@ -311,9 +310,11 @@ class DataBroker(object):
                 data = self.replay_buffer.get(block=False)
             except Empty:  # python can be so gross sometimes
                 break
-            
+
             if self.train_random_symmetry:
-                state, value, policy = DataBroker.random_symmetry(data.state, data.value, data.policy)
+                state, value, policy = DataBroker.random_symmetry(
+                    data.state, data.value, data.policy
+                )
             else:
                 state, value, policy = data.state, data.value, data.policy
 
@@ -325,7 +326,7 @@ class DataBroker(object):
             states.append(data.state)
             values.append(data.value)
             policies.append(data.policy)
-            if self.refill_buffer and data.priority < self.max_priority:
+            if self.refill_buffer and np.random.rand() > self.forget_rate:
                 # put at the end of the queue and add some randomization of order
                 data.priority += (
                     HIGH_PRIORITY + randint(-HIGH_PRIORITY, HIGH_PRIORITY) // 4
@@ -430,7 +431,7 @@ class DataBroker(object):
             print(
                 "Data Buffer size: ",
                 self.replay_buffer.qsize(),
-                end="                                       \r",
+                end="      \r",
             )
         print(
             f"Databroker has {self.replay_buffer.qsize()} items in the queue, dumping to disk..."
