@@ -54,12 +54,12 @@ def main():
                 args.inference_server_port + args.num_servers,
             )
         )
-        for i in range(args.num_games):
+        for i in range(args.num_game_processes):
             games.append(
                 Process(target=gameplay_worker, args=(ports, i, args), daemon=True)
             )
         print("Starting games...")
-        for i, game in enumerate(args.num_game_processes):
+        for i, game in enumerate(games):
             time.sleep(1)  # be nice to your cpu
             game.start()
 
