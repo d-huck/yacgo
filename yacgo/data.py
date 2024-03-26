@@ -28,6 +28,9 @@ import torch
 import zmq
 
 DEPOSIT = 0
+GET_BATCH = 0
+RESET = 1
+
 HIGH_PRIORITY = 50
 TRAINING_BATCH = 1
 QUIT = -1
@@ -48,14 +51,14 @@ class TrainState:
         elif isinstance(value, list):
             value = np.array(value, dtype=DATA_DTYPE)
         if len(value.shape) == 0:
-            value = value.astype(DATA_DTYPE)
+            value = value
         elif len(value.shape) == 1 and value.shape[0] == 1:
-            value = value[0].astype(DATA_DTYPE)
+            value = value[0]
         else:
             raise ValueError("Value must be a single number")
-        self.state = state.astype(DATA_DTYPE).copy()
-        self.value = value.astype(DATA_DTYPE).copy()
-        self.policy = policy.astype(DATA_DTYPE).copy()
+        self.state = state
+        self.value = value
+        self.policy = policy
 
     def pack(self) -> bytearray:
         """Packs the TrainState into a zmq message.
@@ -254,10 +257,39 @@ class DataBroker(object):
         self.min_size = (
             args.training_batch_size
             if not self.refill_buffer
-            else 32 * args.training_batch_size
+            else 8 * args.training_batch_size
         )
+        self.max_priority = (
+            self.batch_size * args.training_steps_per_epoch * HIGH_PRIORITY * 2
+        )
+        self.train_random_symmetry = args.train_random_symmetry
+        self.forget_rate = args.forget_rate
 
-    def get_batch(self, batch_size: int = 32) -> TrainingBatch:
+    @staticmethod
+    def random_symmetry(state, value, policy):
+        pol_pass = policy[-1]
+        policy_1d = policy[:-1]
+        policy_2d = np.reshape(policy_1d, (state.shape[1], state.shape[1]))
+
+        orientation = np.random.randint(0, 8)
+        if (orientation >> 0) % 2:
+            # Horizontal flip
+            state = np.flip(state, 2)
+            policy_2d = np.flip(policy_2d, 1)
+        if (orientation >> 1) % 2:
+            # Vertical flip
+            state = np.flip(state, 1)
+            policy_2d = np.flip(policy_2d, 0)
+        if (orientation >> 2) % 2:
+            # Rotate 90 degrees
+            state = np.rot90(state, axes=(1, 2))
+            policy_2d = np.rot90(policy_2d, axes=(0, 1))
+
+        policy_1d = np.ndarray.flatten(policy_2d)
+        policy = np.append(policy_1d, pol_pass)
+        return state, value, policy
+
+    def get_batch(self) -> TrainingBatch:
         """Returns a single batch from the replay buffer
 
         Args:
@@ -278,11 +310,27 @@ class DataBroker(object):
                 data = self.replay_buffer.get(block=False)
             except Empty:  # python can be so gross sometimes
                 break
+
+            if self.train_random_symmetry:
+                state, value, policy = DataBroker.random_symmetry(
+                    data.state, data.value, data.policy
+                )
+            else:
+                state, value, policy = data.state, data.value, data.policy
+
+            states.append(state)
+            values.append(value)
+            policies.append(policy)
+            if self.refill_buffer:
+                data.priority += HIGH_PRIORITY  # put at the end of the queue
             states.append(data.state)
             values.append(data.value)
             policies.append(data.policy)
-            if self.refill_buffer:
-                data.priority += HIGH_PRIORITY  # put at the end of the queue
+            if self.refill_buffer and np.random.rand() > self.forget_rate:
+                # put at the end of the queue and add some randomization of order
+                data.priority += (
+                    HIGH_PRIORITY + randint(-HIGH_PRIORITY, HIGH_PRIORITY) // 4
+                )
                 self.replay_buffer.put(data)
             count += 1
 
@@ -327,11 +375,16 @@ class DataBroker(object):
 
         self.refill_buffer = False
         while not self.replay_buffer.empty():
-            batch = self.get_batch(1024)
+            batch = self.get_batch()
             fp = self.cache_dir + str(uuid.uuid4()) + ".npz"
             np.savez_compressed(
                 fp, states=batch.states, values=batch.values, policies=batch.policies
             )
+
+    def reset(self, save=False):
+        if save:
+            self.dump_to_disk()
+        self.replay_buffer = PriorityQueue()
 
     def process_data(self, message):
         """
@@ -356,10 +409,16 @@ class DataBroker(object):
                 address, _, message = self.socket.recv_multipart()
 
                 if str(address, "utf-8").startswith("TRAIN"):
-                    batch_size = int(msgpack.unpackb(message))
-                    batch = self.get_batch(batch_size)
-                    if batch is not None:
-                        self.socket.send_multipart([address, b"", batch.pack()])
+                    msg = int(msgpack.unpackb(message))
+                    if msg == GET_BATCH:
+                        batch = self.get_batch()
+                        if batch is not None:
+                            self.socket.send_multipart([address, b"", batch.pack()])
+                        else:
+                            self.socket.send_multipart([address, b"", b""])
+                    elif msg == RESET:
+                        self.reset(save=True)
+                        self.socket.send_multipart([address, b"", b""])
                     else:
                         self.socket.send_multipart([address, b"", b""])
                 else:
@@ -369,7 +428,11 @@ class DataBroker(object):
                 pass
             except KeyboardInterrupt:
                 break
-            print("Data Buffer size: ", self.replay_buffer.qsize(), end="\r")
+            print(
+                "Data Buffer size: ",
+                self.replay_buffer.qsize(),
+                end="      \r",
+            )
         print(
             f"Databroker has {self.replay_buffer.qsize()} items in the queue, dumping to disk..."
         )
@@ -418,8 +481,13 @@ class DataTrainClientMixin:
         self,
     ) -> Union[TrainingBatch, None]:
         """Returns a TrainingBatch from the data broker"""
-        self.data_socket.send(msgpack.packb(self.batch_size))
+        self.data_socket.send(msgpack.packb(GET_BATCH))
         return TrainingBatch.unpack(self.data_socket.recv())
+
+    def reset_data(self):
+        """Resets the data broker"""
+        self.data_socket.send(msgpack.packb(RESET))
+        _ = self.data_socket.recv()
 
     def destroy(self):
         """Sanely shuts down the zmq client"""

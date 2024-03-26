@@ -6,6 +6,7 @@ Logic for MCTS search
 import numpy as np
 
 from yacgo.go import game
+from yacgo.data import DATA_DTYPE
 from typing import List
 
 
@@ -19,6 +20,7 @@ class MCTSSearch:
         self.komi = args.komi
         self.pcap_fast = args.pcap_fast
         self.sims_run = 0
+        self.softmax_temp = args.softmax_temp
         if root is None:
             self.root: MCTSNode = MCTSNode(state, parent=None, search=self)
             self.root.initialize()
@@ -54,7 +56,7 @@ class MCTSSearch:
         ]
 
         e = np.exp(scores)
-        return e / np.sum(e)
+        return DATA_DTYPE(e / np.sum(e))
 
     def action_probs_nodes(self):
         return self.action_probs(), self.root.children
@@ -87,14 +89,25 @@ class MCTSNode:
             self.value, self.policy = self.search.model.forward(
                 self.state
             )  # TODO: Can we remove invalid moves from channel features?
+            self.value = self.value * game.turn_pm(self.state)
+            self.policy *= self.valid_moves
+            e_x = np.exp(
+                self.policy
+                / (
+                    self.search.softmax_temp
+                    if self == self.search.root and self.search.noise
+                    else 1
+                )
+            )
+            self.policy = e_x / np.sum(e_x)
             self.terminal = False
 
     def initialize_children(self):
         if self.children_initialized:
             return
-        
+
         self.children_initialized = True
-        
+
         self.children = [
             (
                 (
@@ -138,7 +151,7 @@ class MCTSNode:
             return self
 
         self.initialize_children()
-        
+
         # TODO: refactor for clarity
         noisy_policy = self.noisy_policy()
 

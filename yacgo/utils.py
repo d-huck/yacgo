@@ -138,6 +138,12 @@ def make_args():
         help="Device for inference/training. Defaults to CUDA, MPS recommended on MacOS",
     )
     parser.add_argument(
+        "--epoch",
+        type=int,
+        default=0,
+        help="Starting epoch for training. Defaults to 0 to start training from scratch",
+    )
+    parser.add_argument(
         "--model_size",
         type=str,
         default="S0",
@@ -171,7 +177,7 @@ def make_args():
     parser.add_argument(
         "--refill_buffer",
         type=bool,
-        default=False,
+        default=True,
         help="Whether to refill the replay buffer after training on a state. Defaults to False",
     )
 
@@ -257,16 +263,28 @@ def make_args():
             "listens on all public addresses.",
         ),
     )
+    parser.add_argument(
+        "--forget_rate",
+        type=float,
+        default=0.15,
+        help="Rate at which to forget old data. Defaults to 0.15",
+    )
 
     # Game / MCTS Settings
     parser.add_argument(
         "--num_games", type=int, default=8, help="Number of games to play"
     )
     parser.add_argument(
+        "--num_comp_games",
+        type=int,
+        default=400,
+        help="Number of games to play for competition",
+    )
+    parser.add_argument(
         "--komi",
         type=float,
-        default=0.0,
-        help="Komi for Go game. Defaults to 0.0",
+        default=0.5,
+        help="Komi for Go game. Defaults to 0.5 to avoid draws, giving white slight advantage",
     )
     parser.add_argument(
         "--n_simulations",
@@ -313,6 +331,18 @@ def make_args():
         type=bool,
         default=True,
         help="Whether to sample from Direchlet noise in MCTS when generating games. Defaults to False",
+    )
+    parser.add_argument(
+        "--softmax_temp",
+        type=float,
+        default=1.2,
+        help="softmax temp applied to policy at root during training",
+    )
+    parser.add_argument(
+        "--train_random_symmetry",
+        type=bool,
+        default=True,
+        help="Whether to apply random symmetries to states during training",
     )
 
     args = parser.parse_args()

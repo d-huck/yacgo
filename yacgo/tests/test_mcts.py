@@ -62,9 +62,9 @@ def custom_state_test():
         [[0, 0, 0], [0, 0, 0], [0, 0, 0]],
     ]
 
-    test_state = np.array(black_test_state)
+    test_state = np.array(white_test_state)
     print(game.state_to_str(test_state))
-    mcts = MCTSSearch(test_state, model, set_args(n_simulations=10000))
+    mcts = MCTSSearch(test_state, model, make_args())
     mcts.run_sims(10000)
     print("action probs")
     print(mcts.action_probs())

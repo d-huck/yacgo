@@ -19,7 +19,7 @@ def gameplay_worker(ports, i, args):
         args (dict): args dict.
     """
     model = InferenceClient(ports, args.inference_server_address)
-    game_gen = GameGenerator(model, args)
+    game_gen = GameGenerator(model, args, display=True)
     print(f"{i:03d}: Starting Game Generation...")
     # data = game_gen.sim_data(1024)
     # for d in data:

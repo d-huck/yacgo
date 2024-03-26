@@ -21,11 +21,7 @@ from yacgo.models import Model
 
 
 class GameGenerator(DataGameClientMixin):
-    def __init__(
-        self,
-        model: Model,
-        args: dict,
-    ):
+    def __init__(self, model: Model, args: dict, display: bool = False):
         super().__init__(args)
 
         self.board_size = args.board_size
@@ -35,19 +31,18 @@ class GameGenerator(DataGameClientMixin):
         self.pcap_fast = args.pcap_fast
         self.pcap_prob = args.pcap_prob
         self.args = args
+        self.display = display
 
     def sim_game(self):
         try:
             data: List[TrainState] = []
             state = game.init_state(self.board_size)
+            if self.display:
+                print(game.state_to_str(state))
             mcts = MCTSSearch(state, self.model, self.args, noise=True, root=None)
             while not game.game_ended(state):
                 train = np.random.random() < self.pcap_prob
-                mcts.run_sims(
-                    self.pcap_train
-                    if train
-                    else np.random.randint(self.pcap_fast, self.pcap_train // 2)
-                )
+                mcts.run_sims(self.pcap_train if train else self.pcap_fast)
                 action_probs, nodes = mcts.action_probs_nodes()
                 if train:
                     data.append(TrainState(state, np.float32(0.0), action_probs))
@@ -56,14 +51,14 @@ class GameGenerator(DataGameClientMixin):
                     np.arange(game.action_size(state)), p=action_probs
                 )
                 state = game.next_state(state, action)
+                if self.display:
+                    print(game.state_to_str(state))
                 mcts = MCTSSearch(
                     state, self.model, self.args, root=nodes[action], noise=True
                 )
 
             winner = game.winning(state)
             for d in data:
-                # TODO: ensure DATA_DTYPE all the way through
-                d.value = DATA_DTYPE(winner * game.turn_pm(d.state))
                 self.deposit(d)
 
         except KeyboardInterrupt:
@@ -74,7 +69,7 @@ class GameGenerator(DataGameClientMixin):
 
     def sim_games(self, num_games=1):
         data: List[TrainState] = []
-        for _ in num_games:
+        for _ in range(num_games):
             data.extend(self.sim_game())
         return data
 

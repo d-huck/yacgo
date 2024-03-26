@@ -5,12 +5,14 @@ saving models, as well as interfacing with the ZMQ.
 """
 
 import os
+import random
 import time
 import uuid
 from typing import Tuple
 
 import numpy as np
 import torch
+from tqdm.auto import tqdm
 import zmq
 
 from yacgo.data import DataTrainClientMixin, State, Inference, TrainState
@@ -21,6 +23,8 @@ from yacgo.vit import (
     EfficientFormer_width,
     EfficientFormerV2,
 )
+
+REQUEST_TIMEOUT = 5000  # ms
 
 
 class Model(object):
@@ -49,7 +53,7 @@ class ViTWrapper(object):
     to the original as possible. Handles construction, saving and loading of weights.
     """
 
-    def __init__(self, args: dict):
+    def __init__(self, args: dict, model_path=None):
         depths = EfficientFormer_depth[args.model_size]
         embed_dims = EfficientFormer_width[args.model_size]
         mlp_ratios = EfficientFormer_expansion_ratios[args.model_size]
@@ -65,7 +69,9 @@ class ViTWrapper(object):
             num_classes=args.board_size**2 + 1,
         ).to(self.device)
         self.model_size = args.model_size
-        if args.model_path is not None:
+        if model_path is not None:
+            self.load_pretrained(model_path)
+        elif args.model_path is not None:
             self.load_pretrained(args.model_path)
         self.board_size = args.board_size
         self.n_chans = args.num_feature_channels
@@ -88,7 +94,7 @@ class ViTWrapper(object):
         """
         self.model.load_state_dict(torch.load(path, map_location=self.device))
 
-    def save_pretrained(self, path: str = None):
+    def save_pretrained(self, path: str = None, epoch: str = None):
         """
         Save pretrained weights.
 
@@ -101,10 +107,14 @@ class ViTWrapper(object):
         """
         if path is None:
             path = f"models/"
+        if epoch is None:
+            epoch = 0
         os.makedirs(path, exist_ok=True)
-        model_name = f"{self.model_size}-bs{self.board_size}-nc{self.n_chans}.pth"
+        model_name = f"{self.model_size}-bs{self.board_size}-nc{self.n_chans}-epoch-{epoch:03d}.pth"
+        out = os.path.join(path, model_name)
+        torch.save(self.model.state_dict(), out)
 
-        torch.save(self.model.state_dict(), f"{path}/{model_name}")
+        return out
 
 
 class InferenceRandom(Model):
@@ -114,7 +124,7 @@ class InferenceRandom(Model):
         pass
 
     def forward(self, inputs):
-        return np.random.random(), np.random.random(game.action_size(inputs))
+        return np.random.random() * 2 - 1, np.random.random(game.action_size(inputs))
 
 
 class InferenceEqual(Model):
@@ -159,10 +169,31 @@ class InferenceClient(Model):
 
     def __init__(self, ports: list, server_address: str = "localhost"):
         self.context = zmq.Context.instance()
-        self.socket = self.context.socket(zmq.REQ)
-        self.socket.setsockopt(zmq.IDENTITY, uuid.uuid4().bytes)
-        for port in ports:
-            self.socket.connect(f"tcp://{server_address}:{port}")
+        # self.socket = self.context.socket(zmq.REQ)
+        # self.socket.setsockopt(zmq.IDENTITY, uuid.uuid4().bytes)
+        # self.socket.setsockopt(zmq.LINGER, 0)
+        self.server_address = server_address
+        self.ports = ports
+
+    def try_request(self, req):
+        random.shuffle(self.ports)
+        for port in self.ports:
+            server = f"tcp://{self.server_address}:{port}"
+            client = self.context.socket(zmq.REQ)
+            client.setsockopt(zmq.LINGER, 0)
+            client.connect(server)
+            client.send(req)
+            poll = zmq.Poller()
+            poll.register(client, zmq.POLLIN)
+            socks = dict(poll.poll(REQUEST_TIMEOUT))
+            if socks.get(client) == zmq.POLLIN:
+                reply = client.recv()
+            else:
+                reply = None
+            poll.unregister(client)
+            client.close()
+
+            return reply
 
     def forward(self, inputs: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """_summary_
@@ -173,9 +204,12 @@ class InferenceClient(Model):
         Returns:
             _type_: _description_
         """
-        state = State(inputs)
-        self.socket.send(state.pack())
-        inf = Inference.unpack(self.socket.recv())
+        state = State(inputs).pack()
+        inf = None
+        while inf is None:
+            inf = self.try_request(state)
+        inf = Inference.unpack(inf)
+
         return inf.value, inf.policy
 
 
@@ -187,8 +221,8 @@ class InferenceServer(ViTWrapper):
         ViTWrapper (_type_): _description_
     """
 
-    def __init__(self, port, args: dict):
-        super().__init__(args)
+    def __init__(self, port, args: dict, model_path=None):
+        super().__init__(args, model_path)
         self.model.eval()
         self.port = port
         self.context = zmq.Context.instance()
@@ -308,30 +342,27 @@ class Trainer(ViTWrapper, DataTrainClientMixin):
 
         return loss.detach().cpu().item()
 
-    def run(
-        self,
-    ):
+    def run(self, epoch: int = 0):
         """
         Runs the trainer indefinitely. Expects to receive a batch of inputs and
         """
         losses = []
-        try:
-            for i in range(self.training_steps):
+        pbar = tqdm(
+            desc=f"Training epoch {epoch}", total=self.training_steps, leave=False
+        )
+        for i in range(self.training_steps):
+            batch = self.get_batch()
+            while batch.batch_size == 0:
+                time.sleep(5)
                 batch = self.get_batch()
-                while batch.batch_size == 0:
-                    time.sleep(5)
-                    batch = self.get_batch()
 
-                loss = self.train_step(batch.states, batch.policies, batch.values)
-                losses.append(loss)
-                avg = sum(losses) / len(losses)
-                print(f"Training Step {i:06,d}, Loss : {avg:04.4f}\n", end="\r")
-                if len(losses) > 10:
-                    _ = losses.pop(0)
-        except KeyboardInterrupt:
-            self.destroy()
-            print("Trainer has quit")
-            pass
+            loss = self.train_step(batch.states, batch.policies, batch.values)
+            losses.append(loss)
+            avg = sum(losses) / len(losses)
+            pbar.update(1)
+            pbar.set_postfix({"Loss": f"{avg:04.4f}"})
+            if len(losses) > 10:
+                _ = losses.pop(0)
 
 
 class ModelServerMixin:
