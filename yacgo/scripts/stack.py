@@ -59,6 +59,49 @@ def gameplay_worker(ports, i, display, args):
         game_gen.destroy()
 
 
+def competition_worker(model, old_model, args):
+    """Wrapper around a simple competition worker.
+
+    Args:
+        port (int): Port server is listening on.
+        args (dict): args dict.
+    """
+    # run the competition
+    if old_model is not None:
+        comp_servers = [
+            Process(
+                target=inference_worker,
+                args=(OLD_MODEL_PORT, args, old_model),
+                daemon=True,
+            ),
+            Process(
+                target=inference_worker,
+                args=(NEW_MODEL_PORT, args, model),
+                daemon=True,
+            ),
+        ]
+    else:
+        comp_servers = [
+            Process(
+                target=inference_worker,
+                args=(NEW_MODEL_PORT, args, model),
+                daemon=True,
+            ),
+        ]
+    for server in comp_servers:
+        server.start()
+    if old_model is not None:
+        comp = ModelCompetition(NEW_MODEL_PORT, OLD_MODEL_PORT, args)
+    else:
+        comp = ModelCompetition(NEW_MODEL_PORT, None, args)
+    result = comp.compete(num_games=args.num_comp_games)
+    print("Competition result:", result.probs)
+    for server in comp_servers:
+        server.terminate()
+        server.join()
+    return result
+
+
 def trainer_worker(args):
     """Wrapper around a simple trainer worker.
 
@@ -117,56 +160,18 @@ def trainer_worker(args):
                 server.terminate()
                 server.join()
 
-            del servers
+            servers = []  # gc the old servers
+            result = competition_worker(model, old_model, args)
 
-            # run the competition
-            if old_model is not None:
-                comp_servers = [
-                    Process(
-                        target=inference_worker,
-                        args=(OLD_MODEL_PORT, args, old_model),
-                        daemon=True,
-                    ),
-                    Process(
-                        target=inference_worker,
-                        args=(NEW_MODEL_PORT, args, model),
-                        daemon=True,
-                    ),
-                ]
-            else:
-                comp_servers = [
-                    Process(
-                        target=inference_worker,
-                        args=(NEW_MODEL_PORT, args, model),
-                        daemon=True,
-                    ),
-                ]
-            for server in comp_servers:
-                server.start()
-            if old_model is not None:
-                comp = ModelCompetition(NEW_MODEL_PORT, OLD_MODEL_PORT, args)
-            else:
-                comp = ModelCompetition(NEW_MODEL_PORT, None, args)
-            result = comp.compete(num_games=args.num_comp_games)
-            print("Competition result:", result.probs)
             if result.probs[0] >= 0.55:
                 old_model = model
                 epoch += 1
             else:
                 os.remove(model)
-            for server in comp_servers:
-                server.terminate()
-                server.join()
-            del comp
-            comp_servers = []
         except KeyboardInterrupt:
             print("Quitting training, closing sockets...")
-        finally:
+
             for server in servers:
-                if server is not None:
-                    server.terminate()
-                    server.join()
-            for server in comp_servers:
                 if server is not None:
                     server.terminate()
                     server.join()
@@ -174,9 +179,11 @@ def trainer_worker(args):
                 if game is not None:
                     game.terminate()
                     game.join()
+
             if model is not None:
                 os.remove(model)  # don't store a bad model
             trainer.destroy()
+
             break
 
 
