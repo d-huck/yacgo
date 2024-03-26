@@ -1,6 +1,5 @@
 """
 Utils for training and evaluating models. 
-TODO: Go through and ensure all numpy is yacgo.data.DATA_DTYPE
 """
 
 # pylint: disable=missing-function-docstring,missing-class-docstring
@@ -10,7 +9,6 @@ from typing import List, Tuple
 
 import numpy as np
 
-from tqdm.auto import tqdm
 from yacgo.algos.mcts import MCTSSearch
 from yacgo.data import TrainState
 from yacgo.game import Game

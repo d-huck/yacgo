@@ -53,6 +53,8 @@ class TrainState:
             value = np.array(value, dtype=DATA_DTYPE)
         elif len(value.shape) == 1 and value.shape[0] == 1:
             value = value[0]
+        elif len(value.shape) == 0:
+            pass  # do nothing
         else:
             raise ValueError("Value must be a single number")
 

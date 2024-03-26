@@ -348,7 +348,10 @@ class Trainer(ViTWrapper, DataTrainClientMixin):
         """
         losses = []
         pbar = tqdm(
-            desc=f"Training epoch {epoch}", total=self.training_steps, leave=False
+            desc=f"Training epoch {epoch}",
+            total=self.training_steps,
+            leave=False,
+            smoothing=0.01,
         )
         for _ in range(self.training_steps):
             batch = self.get_batch()
