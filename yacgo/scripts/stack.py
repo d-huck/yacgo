@@ -70,19 +70,33 @@ def trainer_worker(args):
     trainer = Trainer(args)
     old_model = args.model_path
     epoch = args.epoch
+    games = []
+    ports = list(
+        range(
+            args.inference_server_port,
+            args.inference_server_port + args.num_servers,
+        )
+    )
+    print("Starting gameplay workers...")
+    for i in range(args.num_games):
+        games.append(
+            Process(
+                target=gameplay_worker,
+                args=(ports, i, display, args),
+                daemon=True,
+            )
+        )
+        display &= False
+        for i, game in enumerate(games):
+            game.start()
+            if i % 16 == 15:  # slow spin up of the games
+                time.sleep(5)
     print("Starting training loop...")
-    restart = True
     while True:
         try:
             model = None
             servers = []
-            games = []
-            ports = list(
-                range(
-                    args.inference_server_port,
-                    args.inference_server_port + args.num_servers,
-                )
-            )
+
             for port in ports:
                 servers.append(
                     Process(
@@ -95,24 +109,10 @@ def trainer_worker(args):
             for server in servers:
                 server.start()
             display = True
-            for i in range(args.num_games):
-                games.append(
-                    Process(
-                        target=gameplay_worker,
-                        args=(ports, i, display, args),
-                        daemon=True,
-                    )
-                )
-                display &= False
-            for i, game in enumerate(games):
-                game.start()
-                if i % 16 == 15:  # slow spin up of the games
-                    time.sleep(5)
 
             # run a training run and save the model
             trainer.run(epoch)
             model = trainer.save_pretrained(epoch=epoch)
-
             for server in servers:
                 server.terminate()
                 server.join()
@@ -151,11 +151,8 @@ def trainer_worker(args):
             print("Competition result:", result.probs)
             if result.probs[0] >= 0.55:
                 old_model = model
-                trainer.reset_data()
                 epoch += 1
-                restart = True
             else:
-                restart = False
                 os.remove(model)
             for server in comp_servers:
                 server.terminate()

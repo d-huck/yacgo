@@ -5,6 +5,7 @@ saving models, as well as interfacing with the ZMQ.
 """
 
 import os
+import random
 import time
 import uuid
 from typing import Tuple
@@ -22,6 +23,8 @@ from yacgo.vit import (
     EfficientFormer_width,
     EfficientFormerV2,
 )
+
+REQUEST_TIMEOUT = 5000  # ms
 
 
 class Model(object):
@@ -166,10 +169,31 @@ class InferenceClient(Model):
 
     def __init__(self, ports: list, server_address: str = "localhost"):
         self.context = zmq.Context.instance()
-        self.socket = self.context.socket(zmq.REQ)
-        self.socket.setsockopt(zmq.IDENTITY, uuid.uuid4().bytes)
-        for port in ports:
-            self.socket.connect(f"tcp://{server_address}:{port}")
+        # self.socket = self.context.socket(zmq.REQ)
+        # self.socket.setsockopt(zmq.IDENTITY, uuid.uuid4().bytes)
+        # self.socket.setsockopt(zmq.LINGER, 0)
+        self.server_address = server_address
+        self.ports = ports
+
+    def try_request(self, req):
+        random.shuffle(self.ports)
+        for port in self.ports:
+            server = f"tcp://{self.server_address}:{port}"
+            client = self.context.socket(zmq.REQ)
+            client.setsockopt(zmq.LINGER, 0)
+            client.connect(server)
+            client.send(req)
+            poll = zmq.Poller()
+            poll.register(client, zmq.POLLIN)
+            socks = dict(poll.poll(REQUEST_TIMEOUT))
+            if socks.get(client) == zmq.POLLIN:
+                reply = client.recv()
+            else:
+                reply = None
+            poll.unregister(client)
+            client.close()
+
+            return reply
 
     def forward(self, inputs: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """_summary_
@@ -180,9 +204,12 @@ class InferenceClient(Model):
         Returns:
             _type_: _description_
         """
-        state = State(inputs)
-        self.socket.send(state.pack())
-        inf = Inference.unpack(self.socket.recv())
+        state = State(inputs).pack()
+        inf = None
+        while inf is None:
+            inf = self.try_request(state)
+        inf = Inference.unpack(inf)
+
         return inf.value, inf.policy
 
 
