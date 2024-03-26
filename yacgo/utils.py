@@ -13,6 +13,10 @@ import torch
 from yacgo.data import TORCH_DTYPE, DATA_DTYPE  # pylint: disable=unused-import
 
 
+def build_logger():
+    pass
+
+
 def init_signals():
     """Ignore SIGINT in child workers."""
     signal.signal(signal.SIGINT, signal.SIG_IGN)
@@ -273,6 +277,14 @@ def make_args():
     # Game / MCTS Settings
     parser.add_argument(
         "--num_games", type=int, default=8, help="Number of games to play"
+    )
+    parser.add_argument(
+        "--num_game_processes",
+        type=int,
+        default=16,
+        help=(
+            "Number of game processes. Each process will run num_games // num_processes threads "
+        ),
     )
     parser.add_argument(
         "--num_comp_games",
