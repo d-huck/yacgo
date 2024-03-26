@@ -263,6 +263,12 @@ def make_args():
             "listens on all public addresses.",
         ),
     )
+    parser.add_argument(
+        "--forget_rate",
+        type=float,
+        default=0.15,
+        help="Rate at which to forget old data. Defaults to 0.15",
+    )
 
     # Game / MCTS Settings
     parser.add_argument(
