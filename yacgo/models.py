@@ -4,6 +4,7 @@ wrappers around the EfficientFormer and gives extra methods for reloading and
 saving models, as well as interfacing with the ZMQ.
 """
 
+import atexit
 import os
 import random
 import time
@@ -11,10 +12,11 @@ from typing import Tuple
 
 import numpy as np
 import torch
-from tqdm.auto import tqdm
+import wandb
 import zmq
+from tqdm.auto import tqdm
 
-from yacgo.data import DataTrainClientMixin, State, Inference, TrainState, DATA_DTYPE
+from yacgo.data import DATA_DTYPE, DataTrainClientMixin, Inference, State, TrainState
 from yacgo.go import game
 from yacgo.vit import (
     EfficientFormer_depth,
@@ -93,22 +95,28 @@ class ViTWrapper(object):
         """
         self.model.load_state_dict(torch.load(path, map_location=self.device))
 
-    def save_pretrained(self, path: str = None, epoch: str = None):
-        """
-        Save pretrained weights.
+    def save_pretrained(
+        self, path: str = None, epoch: str = None, candidate: bool = False
+    ):
+        """Save pretrained weights to disk
 
         Args:
-            path (str): path to save the weights
+            path (str, optional): directory to store weights. Defaults to None.
+            epoch (str, optional): epoch of training. Defaults to None.
+            candidate (bool, optional): _description_. Defaults to False.
 
-        Raises:
-            NotImplementedError: _description_
+        Returns:
+            _type_: _description_
         """
         if path is None:
             path = "models/"
         if epoch is None:
             epoch = 0
         os.makedirs(path, exist_ok=True)
-        model_name = f"{self.model_size}-bs{self.board_size}-nc{self.n_chans}-epoch-{epoch:03d}.pth"
+        if candidate:
+            model_name = "candidate_model.pth"
+        else:
+            model_name = f"{self.model_size}-bs{self.board_size}-nc{self.n_chans}-epoch-{epoch:03d}.pth"
         out = os.path.join(path, model_name)
         torch.save(self.model.state_dict(), out)
 
@@ -169,11 +177,13 @@ class InferenceClient(Model):
 
     def __init__(self, ports: list, server_address: str = "localhost"):
         self.context = zmq.Context.instance()
-        # self.socket = self.context.socket(zmq.REQ)
-        # self.socket.setsockopt(zmq.IDENTITY, uuid.uuid4().bytes)
-        # self.socket.setsockopt(zmq.LINGER, 0)
         self.server_address = server_address
         self.ports = ports
+
+        def close():
+            self.context.destroy()
+
+        atexit.register(close)
 
     def try_request(self, req):
         """Reliable pattern for sending requests to the server. Will retry on failure indefinitely"""
@@ -236,6 +246,11 @@ class InferenceServer(ViTWrapper):
         self.batch_size = args.inference_batch_size
         self.n_chans = args.num_feature_channels
         self.board_size = args.board_size
+
+        def close():
+            self.context.destroy()
+
+        atexit.register(close)
 
     def inference(self, inputs: np.ndarray):
         """Performs a batch inference on the model
@@ -315,6 +330,7 @@ class Trainer(ViTWrapper, DataTrainClientMixin):
         self.criterion = torch.nn.CrossEntropyLoss()
         self.regressor = torch.nn.MSELoss()
         self.training_steps = args.training_steps_per_epoch
+        self.wandb = args.wandb
         self.model.train()
 
     def train_step(self, states: np.ndarray, policies: np.ndarray, values: np.ndarray):
@@ -339,7 +355,8 @@ class Trainer(ViTWrapper, DataTrainClientMixin):
         ) + 0.5 * self.regressor(values_pred.squeeze(), values)
         loss.backward()
         self.optimizer.step()
-
+        if self.wandb:
+            wandb.log({"Loss": loss.detach().cpu().item()})
         return loss.detach().cpu().item()
 
     def run(self, epoch: int = 0):
@@ -382,6 +399,11 @@ class ModelServerMixin:
         self.publisher = self.context.socket(zmq.PUB)
         self.publisher.bind(f"tcp://*:{self.port + 1}")
 
+        def close():
+            self.context.destroy()
+
+        atexit.register(close)
+
 
 class ModelClientMixin:
     """Model client to receive weights from the model server"""
@@ -392,3 +414,8 @@ class ModelClientMixin:
         self.socket.connect(f"tcp://{address}:{port}")
         self.subscriber = self.context.socket(zmq.SUB)
         self.subscriber.connect(f"tcp://{address}:{port + 1}")
+
+        def close():
+            self.context.destroy()
+
+        atexit.register(close)
