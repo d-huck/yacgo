@@ -5,6 +5,7 @@ Runs the entire yacgo stack: 1 Trainer, 1 DataBroker, n InferenceServers, k Game
 import os
 import time
 import multiprocessing as mp
+from concurrent.futures import ThreadPoolExecutor
 from multiprocessing import Process
 
 from yacgo.data import DataBroker, DataGameClientMixin
@@ -46,17 +47,24 @@ def gameplay_worker(ports, i, display, args):
         port (int): Port server is listening on.
         args (dict): args dict.
     """
-    model = InferenceClient(ports, args.inference_server_address)
-    game_gen = GameGenerator(model, args, display=display)
-    # data = game_gen.sim_data(1024)
-    # for d in data:
-    #     data_client.deposit(d)
-    try:
-        while True:
-            game_gen.sim_game()
-    except KeyboardInterrupt:
-        print("Quitting game generation, closing sockets...")
-        game_gen.destroy()
+
+    def game_play_thread():
+        model = InferenceClient(ports, args.inference_server_address)
+        game_gen = GameGenerator(model, args, display=display)
+        # data = game_gen.sim_data(1024)
+        # for d in data:
+        #     data_client.deposit(d)
+        try:
+            while True:
+                game_gen.sim_game()
+        except KeyboardInterrupt:
+            print("Quitting game generation, closing sockets...")
+            game_gen.destroy()
+
+    n_threads = args.num_games // args.num_game_processes
+    with ThreadPoolExecutor(max_workers=n_threads) as executor:
+        for _ in range(n_threads):
+            executor.submit(game_play_thread)
 
 
 def competition_worker(model, old_model, args):
@@ -122,7 +130,7 @@ def trainer_worker(args):
     )
     print("Starting gameplay workers...")
     display = True
-    for i in range(args.num_games):
+    for i in range(args.num_game_processes):
         games.append(
             Process(
                 target=gameplay_worker,
