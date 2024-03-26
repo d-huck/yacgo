@@ -32,7 +32,7 @@ DEPOSIT = 0
 GET_BATCH = 0
 RESET = 1
 
-HIGH_PRIORITY = 50
+HIGH_PRIORITY = 1000
 TRAINING_BATCH = 1
 QUIT = -1
 
@@ -339,12 +339,10 @@ class DataBroker(object):
             # values.append(data.value)
             # policies.append(data.policy)
 
-            if (
-                self.refill_buffer
-                and data.priority < self.max_priority
-                and np.random.rand() > self.forget_rate
-            ):
-                # put at the end of the queue and add some randomization of order
+            refill = True
+            if data.priority > self.max_priority:
+                refill = np.random.rand() > self.forget_rate
+            if refill and self.refill_buffer:
                 data.priority += (
                     HIGH_PRIORITY + randint(-HIGH_PRIORITY, HIGH_PRIORITY) // 4
                 )
