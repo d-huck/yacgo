@@ -430,7 +430,9 @@ class DataBroker(object):
                     msg = int(msgpack.unpackb(message))
                     if msg == GET_BATCH:
                         if self.replay_buffer.qsize() < self.min_size:
-                            batch = None
+                            batch = TrainingBatch(
+                                0, np.array([]), np.array([]), np.array([])
+                            )
                         else:
                             batch = self.get_batch()
                         if batch is not None:
