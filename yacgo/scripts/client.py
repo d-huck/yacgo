@@ -45,7 +45,7 @@ def main():
     """
     args = make_args()
 
-    mp.set_start_method("fork")
+    mp.set_start_method("spawn")
     try:
         games = []
         ports = list(
