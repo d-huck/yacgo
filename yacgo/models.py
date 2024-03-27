@@ -288,11 +288,8 @@ class InferenceServer(ViTWrapper):
         for _ in range(self.batch_size):
             try:
                 address, _, buffer = self.socket.recv_multipart()
-            except zmq.error.Again:
-                continue
-            try:
                 state = State.unpack(buffer)
-            except ValueError:
+            except (zmq.error.Again, ValueError):
                 continue
             inputs[n] = state.state
             addresses.append(address)
