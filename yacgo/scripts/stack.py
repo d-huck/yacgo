@@ -222,22 +222,6 @@ def main():
         )
     )
     try:
-        print("Starting gameplay workers...")
-        display = True
-        for i in range(args.num_game_processes):
-            games.append(
-                Process(
-                    target=gameplay_worker,
-                    args=(ports, i, display, args),
-                    daemon=True,
-                )
-            )
-            display &= False
-        for i, game in enumerate(games):
-            game.start()
-            if i % 16 == 15:  # slow spin up of the games
-                time.sleep(5)
-
         # Start the databroker
         databroker = Process(target=databroker_worker, args=(args,), daemon=True)
         databroker.start()
