@@ -2,13 +2,13 @@
 Code for evaluating networks.
 """
 
+import random
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from multiprocessing import Lock, Pool
-import signal
 from typing import Tuple
 
 import numpy as np
-import wandb
 from tqdm.auto import tqdm
 
 from yacgo.game import Game
@@ -20,7 +20,17 @@ from yacgo.player import MCTSPlayer, RandomPlayer
 BW_GAME = 0
 WB_GAME = 1
 
-COMP_WORKERS = 64  # hard set
+# hard set workers to minimum for running 400 games (max) at once
+COMP_WORKERS = 50
+COMP_THREADS = 8
+
+
+def play_game_worker(game_args):
+    results = []
+    with ThreadPoolExecutor(max_workers=COMP_THREADS) as ex:
+        for result in ex.map(play_game, game_args):
+            results.append(result)
+    return results
 
 
 def play_game(game_args):
@@ -116,15 +126,20 @@ class ModelCompetition:
             (self.model2, self.model1, self.args, self.komi, "wb")
             for _ in range(wb_games)
         ]
+        random.shuffle(comp_args)
+        game_args = []
+        for i in range(0, len(comp_args), COMP_THREADS):
+            game_args.append(comp_args[i : i + COMP_THREADS])
         with Pool(COMP_WORKERS) as p:
-            for order, result in p.imap_unordered(play_game, comp_args):
-                if order == "bw":
-                    raw_bw_results.append(result)
-                    self.scores.append(result)
-                elif order == "wb":
-                    raw_wb_results.append(result)
-                    self.scores.append(result * -1)
-                self.pbar.update(1)
+            for results in p.imap_unordered(play_game_worker, game_args):
+                for order, winner in results:
+                    if order == "bw":
+                        raw_bw_results.append(winner)
+                        self.scores.append(winner)
+                    elif order == "wb":
+                        raw_wb_results.append(winner)
+                        self.scores.append(winner * -1)
+                    self.pbar.update(1)
                 self.pbar.set_postfix({"score": sum(self.scores)})
         self.pbar.close()
 
