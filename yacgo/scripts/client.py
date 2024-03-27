@@ -62,7 +62,7 @@ def main():
             )
         print("Starting games...")
         for i, game in enumerate(games):
-            time.sleep(1)  # be nice to your cpu
+            time.sleep(10)  # stagger start the workers
             game.start()
 
         for game in games:

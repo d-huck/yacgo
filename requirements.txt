@@ -1,3 +1,11 @@
 torch
 timm
 submitit
+wandb 
+scikit-learn
+scipy
+numpy
+randomname
+msgpack
+pyzmq
+tqdm

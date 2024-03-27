@@ -274,9 +274,9 @@ class DataBroker(object):
 
         def close():
             """Close the zmq socket and context and save data buffer to disk"""
-            self.dump_to_disk()
             self.socket.close()
-            self.context.term()
+            self.context.destroy()
+            self.dump_to_disk()
             print("DataBroker closed")
 
         atexit.register(close)

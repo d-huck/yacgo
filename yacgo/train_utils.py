@@ -4,6 +4,7 @@ Utils for training and evaluating models.
 
 # pylint: disable=missing-function-docstring,missing-class-docstring
 
+import gc
 from dataclasses import dataclass
 from typing import List, Tuple
 
@@ -58,6 +59,7 @@ class GameGenerator(DataGameClientMixin):
             winner = game.winning(state)
             for d in data:
                 self.deposit(d)
+            gc.collect()
 
         except KeyboardInterrupt:
             print("Quitting game generation, closing sockets...")
