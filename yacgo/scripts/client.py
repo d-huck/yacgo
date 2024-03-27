@@ -2,9 +2,10 @@
 Runs n GamePlay workers.
 """
 
-from concurrent.futures import ThreadPoolExecutor
+import gc
 import multiprocessing as mp
 import time
+from concurrent.futures import ThreadPoolExecutor
 from multiprocessing import Process
 
 from yacgo.models import InferenceClient
@@ -29,6 +30,8 @@ def gameplay_worker(ports, i, display, args):
         try:
             while True:
                 game_gen.sim_game()
+                game_gen = GameGenerator(model, args, display=display)
+                gc.collect()
         except KeyboardInterrupt:
             print("Quitting game generation, closing sockets...")
             game_gen.destroy()
