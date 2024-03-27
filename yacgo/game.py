@@ -2,6 +2,7 @@
 
 from yacgo.go import game, govars
 from yacgo.player import Player
+from yacgo.data import DATA_DTYPE
 
 
 class Game:
@@ -10,10 +11,16 @@ class Game:
         self.players = [black, white]
         self.komi = komi
         self.turn = govars.BLACK
+        self.n_turns = 0
+        self.max_turns = board_size * board_size * 2
         self.done = False
         self.score = 0
 
     def step(self):
+        if self.n_turns >= self.max_turns:
+            self.done = True
+            self.score = DATA_DTYPE(0)
+            return self.score
         if not self.done:
             action = self.players[self.turn].sample_action(self.state)
             self.state = game.next_state(self.state, action)
@@ -22,6 +29,7 @@ class Game:
             if self.done:
                 self.score = game.winning(self.state, self.komi)
 
+            self.n_turns += 1
         return self.score
 
     def play_full(self, print_every=False, print_final=False):
