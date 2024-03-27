@@ -20,6 +20,8 @@ from yacgo.player import MCTSPlayer, RandomPlayer
 BW_GAME = 0
 WB_GAME = 1
 
+COMP_WORKERS = 32  # hard set
+
 
 def play_game(game_args):
     """Plays a single game between two models. Since this is multithreaded,
@@ -85,7 +87,7 @@ class ModelCompetition:
             total=1, unit="game", postfix={"score": 0.0}, smoothing=0.001, leave=False
         )
         self.lock = Lock()
-        self.n_workers = args.num_games
+        self.n_workers = args.num_game_processes
         self.scores = []
         self.wandb = args.wandb
 
@@ -114,7 +116,7 @@ class ModelCompetition:
             (self.model2, self.model1, self.args, self.komi, "wb")
             for _ in range(wb_games)
         ]
-        with Pool(n_workers) as p:
+        with Pool(COMP_WORKERS) as p:
             for order, result in p.imap_unordered(play_game, comp_args):
                 if order == "bw":
                     raw_bw_results.append(result)

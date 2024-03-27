@@ -378,6 +378,13 @@ class DataBroker(object):
                         PrioritizedTrainState(randint(0, HIGH_PRIORITY), s, v, p)
                     )
                 os.remove(fp)
+        if self.wandb:
+            wandb.log(
+                {
+                    "Replay Buffer Size": self.replay_buffer.qsize(),
+                },
+                commit=True,
+            )
 
     def dump_to_disk(self):
         """
@@ -407,7 +414,7 @@ class DataBroker(object):
             self.dump_to_disk()
         self.replay_buffer = PriorityQueue()
 
-    def process_data(self, message, commit=False):
+    def process_data(self, message, commit=True):
         """
         Unpacks data from a message and places it in the replay buffer
 
@@ -432,6 +439,7 @@ class DataBroker(object):
         """
         Starts the data broker
         """
+        count = 0
         while True:
             try:
                 address, _, message = self.socket.recv_multipart()
@@ -455,13 +463,12 @@ class DataBroker(object):
                     else:
                         self.socket.send_multipart([address, b"", b""])
                 else:
-                    self.process_data(message)
+                    self.process_data(message, commit=count % 16 == 0)
                     self.socket.send_multipart([address, b"", b""])
             except zmq.error.Again:
                 pass
             except (KeyboardInterrupt, SystemExit):
                 break
-
 
 
 class DataGameClientMixin:

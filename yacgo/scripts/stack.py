@@ -252,12 +252,14 @@ def main():
     finally:
         print("Terminating games...")
         for game in games:
-            game.terminate()
-            game.join()
-        print("Terminating databroker...")
-        databroker.terminate()
-        databroker.join()
-        # wandb.finish()
+            if game is not None:
+                game.terminate()
+                game.join()
+        if databroker is not None:
+            print("Terminating databroker...")
+            databroker.terminate()
+            databroker.join()
+
         print("Exiting...")
 
 
