@@ -2,18 +2,17 @@
 Runs the entire yacgo stack: 1 Trainer, 1 DataBroker, n InferenceServers, k Gameplay clients.
 """
 
+import atexit
 import multiprocessing as mp
 import os
-import atexit
 import signal
-import time
 from concurrent.futures import ThreadPoolExecutor
 from multiprocessing import Process
 
 import randomname
-import wandb
 
-from yacgo.data import DataBroker, DataGameClientMixin
+import wandb
+from yacgo.data import DataBroker
 from yacgo.eval import ModelCompetition
 from yacgo.models import InferenceClient, InferenceServer, Trainer
 from yacgo.train_utils import GameGenerator
@@ -54,7 +53,7 @@ def databroker_worker(args):
     broker.run()
 
 
-def gameplay_worker(ports, i, display, args):
+def gameplay_worker(ports, display, args):
     """Wrapper around a simple gameplay worker.
 
     Args:
@@ -134,7 +133,7 @@ def competition_worker(model, best_model, return_val, args):
     return result
 
 
-def trainer(ports, args):
+def trainer_worker(ports, args):
     """Wrapper around a simple trainer worker.
 
     Args:
@@ -144,7 +143,7 @@ def trainer(ports, args):
     trainer = Trainer(args)
     best_model = args.model_path
     if best_model is not None:
-        args.epoch = model_name_to_epoch(best_model) + 1
+        epoch = model_name_to_epoch(best_model) + 1
     else:
         epoch = args.epoch
     print("Starting training loop...")
@@ -159,8 +158,6 @@ def trainer(ports, args):
     atexit.register(close)
     manager = mp.Manager()
     while True:
-        model = None
-
         for port in ports:
             servers.append(
                 Process(
@@ -227,12 +224,14 @@ def main():
         databroker.start()
 
         # Start the trainer
-        trainer(ports, args)
+        trainer_worker(ports, args)
         databroker.terminate()
         databroker.join()
 
     except KeyboardInterrupt:
         pass
+    except Exception as e:  # pylint: disable=broad-except
+        print("Error:", e)
     finally:
         print("Terminating games...")
         for game in games:
