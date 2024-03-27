@@ -20,7 +20,7 @@ from yacgo.player import MCTSPlayer, RandomPlayer
 BW_GAME = 0
 WB_GAME = 1
 
-COMP_WORKERS = 32  # hard set
+COMP_WORKERS = 64  # hard set
 
 
 def play_game(game_args):
