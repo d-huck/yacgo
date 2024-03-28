@@ -14,6 +14,7 @@ request a batch of data from the replay buffer. The expected message should be
 the same as above.
 """
 
+import atexit
 import logging
 import os
 import signal
