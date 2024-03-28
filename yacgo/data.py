@@ -272,7 +272,6 @@ class DataBroker(object):
         self.forget_rate = args.forget_rate
         self.wandb = args.wandb
 
-        print(self.cache_dir)
         if self.cache_dir is not None:
             self.load_from_disk()
 
@@ -376,10 +375,14 @@ class DataBroker(object):
         for file in os.listdir(self.cache_dir):
             if file.endswith(".npz"):
                 fp = os.path.join(self.cache_dir, file)
-                data = np.load(fp)
-                states = data["states"]
-                values = data["values"]
-                policies = data["policies"]
+                try:
+                    data = np.load(fp)
+                    states = data["states"]
+                    values = data["values"]
+                    policies = data["policies"]
+                except Exception:
+                    os.remove(fp)
+                    continue
                 if "priorities" in data:
                     priorities = data["priorities"]
                 else:
@@ -407,7 +410,7 @@ class DataBroker(object):
         if self.cache_dir is None:
             return
 
-        bs = 8192
+        bs = 512
         os.makedirs(self.cache_dir, exist_ok=True)
         batch = {"states": [], "values": [], "policies": [], "priorities": []}
         while not self.replay_buffer.empty():
