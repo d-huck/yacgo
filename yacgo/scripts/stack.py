@@ -41,6 +41,7 @@ def databroker_worker(args):
         port (int): Port server is listening on.
         args (dict): args dict.
     """
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
     if args.wandb:
         wandb.init(
             project=args.wandb_project,
@@ -48,7 +49,6 @@ def databroker_worker(args):
             job_type="replay_buffer",
             config=args,
         )
-
     broker = DataBroker(args)
     broker.run()
 
