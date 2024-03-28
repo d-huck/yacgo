@@ -2,7 +2,6 @@
 Simple script to test databroker flow
 """
 
-import atexit
 import multiprocessing as mp
 import time
 from multiprocessing import Pool, Process
@@ -13,16 +12,14 @@ from tqdm.auto import tqdm
 from yacgo.data import (
     DataBroker,
     DataGameClientMixin,
-    KataGoDataClient,
     TrainState,
     DATA_DTYPE,
 )
 from yacgo.models import InferenceRandom, Trainer
-from yacgo.train_utils import GameGenerator
 from yacgo.utils import make_args
 
 
-def gameplay_worker(i, args):
+def gameplay_worker(_, args):
     """Wrapper around a simple gameplay worker.
 
     Args:
@@ -99,7 +96,6 @@ def main():
     databroker = Process(target=databroker_worker, args=(args,), daemon=True)
     databroker.start()
 
-    model = InferenceRandom()
     games = [(i, args) for i in range(16)]
     pbar = tqdm(total=len(games))
     with Pool(processes=16) as p:

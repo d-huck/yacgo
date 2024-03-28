@@ -6,18 +6,21 @@ from yacgo.data import DATA_DTYPE
 
 
 class Game:
-    def __init__(self, board_size, black: Player, white: Player, komi=0):
+    def __init__(
+        self, board_size, black: Player, white: Player, komi=0, max_turns: bool = False
+    ):
         self.state = game.init_state(board_size)
         self.players = [black, white]
         self.komi = komi
         self.turn = govars.BLACK
         self.n_turns = 0
-        self.max_turns = board_size * board_size * 2
+        self.max_turns = max_turns
+        self.n_max_turns = board_size * board_size * 2
         self.done = False
         self.score = 0
 
     def step(self):
-        if self.n_turns >= self.max_turns:
+        if self.max_turns and self.n_turns >= self.n_max_turns:
             self.done = True
             self.score = DATA_DTYPE(0)
             return self.score

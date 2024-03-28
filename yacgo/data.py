@@ -277,7 +277,7 @@ class DataBroker(object):
 
         signal.signal(signal.SIGTERM, self.close)
 
-    def close(self, _, _):
+    def close(self, _, __):
         """Close the zmq socket and context and save data buffer to disk"""
         self.running = False
         self.socket.close()
@@ -379,7 +379,7 @@ class DataBroker(object):
                     states = data["states"]
                     values = data["values"]
                     policies = data["policies"]
-                except Exception:
+                except Exception: # pylint
                     os.remove(fp)
                     continue
                 if "priorities" in data:
@@ -397,7 +397,7 @@ class DataBroker(object):
                 commit=True,
             )
 
-    def dump_to_disk(self, refill=False):
+    def dump_to_disk(self):
         """
         Dumps data to disk for caching
 
@@ -527,7 +527,6 @@ class DataGameClientMixin:
         """Sanely shuts down the zmq client"""
         self.data_socket.close()
         self.data_context.term()
-        print("DataTrainClient closed")
 
 
 class DataTrainClientMixin:
