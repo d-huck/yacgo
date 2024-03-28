@@ -5,17 +5,14 @@ Utils for training and evaluating models.
 # pylint: disable=missing-function-docstring,missing-class-docstring
 
 import gc
-from dataclasses import dataclass
-from typing import List, Tuple
+from typing import List
 
 import numpy as np
 
 from yacgo.algos.mcts import MCTSSearch
 from yacgo.data import TrainState
-from yacgo.game import Game
-from yacgo.go import game, govars
-from yacgo.data import DataGameClientMixin, DATA_DTYPE
-from yacgo.player import MCTSPlayer, RandomPlayer
+from yacgo.go import game
+from yacgo.data import DataGameClientMixin
 from yacgo.models import Model
 
 
@@ -29,6 +26,8 @@ class GameGenerator(DataGameClientMixin):
         self.pcap_train = args.pcap_train
         self.pcap_fast = args.pcap_fast
         self.pcap_prob = args.pcap_prob
+        self.max_turns = self.board_size * self.board_size * 2
+        self.n_turns = 0
         self.args = args
         self.display = display
 
@@ -40,6 +39,8 @@ class GameGenerator(DataGameClientMixin):
                 print(game.state_to_str(state))
             mcts = MCTSSearch(state, self.model, self.args, noise=True, root=None)
             while not game.game_ended(state):
+                if self.n_turns >= self.max_turns:
+                    break
                 train = np.random.random() < self.pcap_prob
                 mcts.run_sims(self.pcap_train if train else self.pcap_fast)
                 action_probs, nodes = mcts.action_probs_nodes()
@@ -55,8 +56,8 @@ class GameGenerator(DataGameClientMixin):
                 mcts = MCTSSearch(
                     state, self.model, self.args, root=nodes[action], noise=True
                 )
+                self.n_turns += 1
 
-            winner = game.winning(state)
             for d in data:
                 self.deposit(d)
             gc.collect()
