@@ -6,7 +6,7 @@ a newly initialized, untrained model.
 
 # from concurrent.futures import ThreadPoolExecutor
 from multiprocessing import Process, Pool
-
+import signal
 from tqdm.auto import tqdm
 
 from yacgo.data import DataBroker
@@ -42,6 +42,7 @@ def databroker_worker(args):
         port (int): Port server is listening on.
         args (dict): args dict.
     """
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
     if args.wandb:
         wandb.init(
             project=args.wandb_project,
@@ -54,16 +55,23 @@ def databroker_worker(args):
     broker.run()
 
 
-if __name__ == "__main__":
+def main():
     args = make_args()
     # args.wandb = False
 
     databroker = Process(target=databroker_worker, args=(args,), daemon=True)
     databroker.start()
-    games = [args for i in range(32000 // 64)]
-    pbar = tqdm(total=len(games))
-    with Pool(processes=64) as pool:
-        for _ in pool.map(random_gameplay, games):
-            pbar.update(1)
+    try:
+        games = [args for i in range(32000 // 64)]
+        pbar = tqdm(total=len(games))
+        with Pool(processes=64) as pool:
+            for _ in pool.map(random_gameplay, games):
+                pbar.update(1)
+    except KeyboardInterrupt:
+        pass
     databroker.terminate()
     databroker.join()
+
+
+if __name__ == "__main__":
+    main()
