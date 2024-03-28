@@ -5,10 +5,18 @@ Simple script to test databroker flow
 import atexit
 import multiprocessing as mp
 import time
-from multiprocessing import Process, Pool
+from multiprocessing import Pool, Process
 
+import numpy as np
 from tqdm.auto import tqdm
-from yacgo.data import DataBroker, KataGoDataClient
+
+from yacgo.data import (
+    DataBroker,
+    DataGameClientMixin,
+    KataGoDataClient,
+    TrainState,
+    DATA_DTYPE,
+)
 from yacgo.models import InferenceRandom, Trainer
 from yacgo.train_utils import GameGenerator
 from yacgo.utils import make_args
@@ -21,15 +29,31 @@ def gameplay_worker(i, args):
         port (int): Port server is listening on.
         args (dict): args dict.
     """
-    model = InferenceRandom()
-    game_gen = GameGenerator(model, args, display=False)
+    # model = InferenceRandom()
+    # game_gen = GameGenerator(model, args, display=False)
+    client = DataGameClientMixin(args)
     try:
-        while True:
-            game_gen.sim_game()
+        for _ in range(1024):
+            data = TrainState(
+                state=DATA_DTYPE(
+                    np.random.random(
+                        (
+                            1,
+                            args.num_feature_channels,
+                            args.board_size,
+                            args.board_size,
+                        )
+                    )
+                ),
+                value=DATA_DTYPE(np.random.random()),
+                policy=DATA_DTYPE(np.random.random((1, args.board_size**2 + 1))),
+            )
+            client.deposit(data)
+
             # print(f"{i:03d}: Game finished!")
     except KeyboardInterrupt:
         print("Quitting game generation, closing sockets...")
-        game_gen.destroy()
+        # game_gen.destroy()
 
 
 def databroker_worker(args):
@@ -39,8 +63,8 @@ def databroker_worker(args):
         port (int): Port server is listening on.
         args (dict): args dict.
     """
-    broker = DataBroker(args)
     print("Starting databroker...")
+    broker = DataBroker(args)
     broker.run()
 
 
@@ -55,13 +79,13 @@ def trainer_worker(args):
     trainer.run()
 
 
-@atexit.register
+# @atexit.register
 def cleanup_wait():
     """
     Cleanup function
     """
     print("Cleaning up...")
-    time.sleep(5)
+    time.sleep(30)
 
 
 def main():
@@ -70,24 +94,19 @@ def main():
     """
     mp.set_start_method("spawn")
     args = make_args()
+    args.wandb = False
 
     databroker = Process(target=databroker_worker, args=(args,), daemon=True)
     databroker.start()
-    # trainer = Process(target=trainer_worker, args=(args,), daemon=True)
-    # trainer.start()
+
     model = InferenceRandom()
-    # time.sleep(5)
-    # game_gen = GameGenerator(model, args, display=True)
-    games = [(i, args) for i in range(128)]
+    games = [(i, args) for i in range(16)]
     pbar = tqdm(total=len(games))
     with Pool(processes=16) as p:
         for _ in p.starmap(gameplay_worker, games):
-            pbar.update
-    # data = KataGoDataClient(args)
-    # data.run("data/kata1-b40c256x2-s5095420928-d1229425124")
+            pbar.update()
+    pbar.close()
     print("Done making data... Terminating processes.")
-    # trainer.terminate()
-    # trainer.join()
     databroker.terminate()
     databroker.join()
     print("Exiting...")
