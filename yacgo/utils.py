@@ -356,6 +356,12 @@ def make_args():
         default=True,
         help="Whether to apply random symmetries to states during training",
     )
+    parser.add_argument(
+        "--acceptance_ratio",
+        type=float,
+        default=0.55,
+        help="Percentage of games a model needs to win to become new best model. Defaults to 0.55",
+    )
 
     # Misc
     parser.add_argument(

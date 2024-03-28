@@ -145,7 +145,9 @@ def trainer_worker(ports, args):
     if best_model is not None:
         epoch = model_name_to_epoch(best_model) + 1
     else:
-        epoch = args.epoch
+        epoch = 0
+
+    epoch = max(args.epoch, epoch)
     print("Starting training loop...")
     servers = []
 
@@ -193,7 +195,7 @@ def trainer_worker(ports, args):
         if os.path.exists(candidate):
             os.remove(candidate)
 
-        if return_val.value >= 0.55:
+        if return_val.value >= args.acceptance_ratio:
             best_model = trainer.save_pretrained(epoch=epoch)
         epoch += 1
 
