@@ -276,9 +276,8 @@ class DataBroker(object):
             self.load_from_disk()
 
         signal.signal(signal.SIGTERM, self.close)
-        signal.signal(signal.SIGINT, self.close)
 
-    def close(self, signum, frame):
+    def close(self, _, _):
         """Close the zmq socket and context and save data buffer to disk"""
         self.running = False
         self.socket.close()
