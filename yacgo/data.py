@@ -14,9 +14,9 @@ request a batch of data from the replay buffer. The expected message should be
 the same as above.
 """
 
-import atexit
 import logging
 import os
+import signal
 import uuid
 from dataclasses import dataclass, field
 from queue import Empty, PriorityQueue
@@ -26,8 +26,9 @@ from typing import Union
 import msgpack
 import numpy as np
 import torch
-import wandb
 import zmq
+
+import wandb
 
 DEPOSIT = 0
 GET_BATCH = 0
@@ -245,6 +246,7 @@ class DataBroker(object):
         self,
         args,
     ):
+        self.running = False
         self.min_size = args.replay_buffer_min_size
         self.max_size = args.replay_buffer_size
         self.port = args.databroker_port
@@ -269,17 +271,21 @@ class DataBroker(object):
         self.forget_rate = args.forget_rate
         self.wandb = args.wandb
 
+        print(self.cache_dir)
         if self.cache_dir is not None:
             self.load_from_disk()
 
-        def close():
-            """Close the zmq socket and context and save data buffer to disk"""
-            self.socket.close()
-            self.context.destroy()
-            self.dump_to_disk()
-            print("DataBroker closed")
+        signal.signal(signal.SIGTERM, self.close)
+        signal.signal(signal.SIGINT, self.close)
 
-        atexit.register(close)
+    def close(self, signum, frame):
+        """Close the zmq socket and context and save data buffer to disk"""
+        self.running = False
+        self.socket.close()
+        self.context.destroy()
+        self.dump_to_disk()
+        print("DataBroker closed")
+        raise SystemExit(0)
 
     @staticmethod
     def random_symmetry(state, value, policy):
@@ -373,10 +379,12 @@ class DataBroker(object):
                 states = data["states"]
                 values = data["values"]
                 policies = data["policies"]
-                for s, v, p in zip(states, values, policies):
-                    self.replay_buffer.put(
-                        PrioritizedTrainState(randint(0, HIGH_PRIORITY), s, v, p)
-                    )
+                if "priorities" in data:
+                    priorities = data["priorities"]
+                else:
+                    priorities = list(np.random.randint(0, HIGH_PRIORITY, len(states)))
+                for s, v, p, p_ in zip(states, values, policies, priorities):
+                    self.replay_buffer.put(PrioritizedTrainState(p_, s, v, p))
                 os.remove(fp)
         if self.wandb:
             wandb.log(
@@ -386,7 +394,7 @@ class DataBroker(object):
                 commit=True,
             )
 
-    def dump_to_disk(self):
+    def dump_to_disk(self, refill=False):
         """
         Dumps data to disk for caching
 
@@ -394,19 +402,37 @@ class DataBroker(object):
             batch (_type_): _description_
             path (_type_): _description_
         """
+        print("Dumping data to disk")
         if self.cache_dir is None:
             return
 
+        bs = 8192
         os.makedirs(self.cache_dir, exist_ok=True)
-        self.refill_buffer = False
-        self.train_random_symmetry = False
-        self.batch_size = 8192
+        batch = {"states": [], "values": [], "policies": [], "priorities": []}
         while not self.replay_buffer.empty():
-            print("getting batch")
-            batch = self.get_batch()
+            data = self.replay_buffer.get()
+            batch["states"].append(data.state)
+            batch["values"].append(data.value)
+            batch["policies"].append(data.policy)
+            batch["priorities"].append(data.priority)
+            if len(batch["states"]) >= bs:
+                fp = os.path.join(self.cache_dir, f"{str(uuid.uuid4())}.npz")
+                np.savez_compressed(
+                    fp,
+                    states=batch["states"],
+                    values=batch["values"],
+                    policies=batch["policies"],
+                    priorities=batch["priorities"],
+                )
+                batch = {"states": [], "values": [], "policies": [], "priorities": []}
+        if len(batch["states"]) > 0:
             fp = os.path.join(self.cache_dir, f"{str(uuid.uuid4())}.npz")
             np.savez_compressed(
-                fp, states=batch.states, values=batch.values, policies=batch.policies
+                fp,
+                states=batch["states"],
+                values=batch["values"],
+                policies=batch["policies"],
+                priorities=batch["priorities"],
             )
 
     def reset(self, save=False):
@@ -440,7 +466,8 @@ class DataBroker(object):
         Starts the data broker
         """
         count = 0
-        while True:
+        self.running = True
+        while self.running:
             try:
                 address, _, message = self.socket.recv_multipart()
 
@@ -468,7 +495,7 @@ class DataBroker(object):
             except zmq.error.Again:
                 pass
             except (KeyboardInterrupt, SystemExit):
-                break
+                self.running = False
 
 
 class DataGameClientMixin:
