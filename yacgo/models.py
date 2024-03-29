@@ -25,7 +25,7 @@ from yacgo.vit import (
     EfficientFormerV2,
 )
 
-REQUEST_TIMEOUT = 10000  # ms
+REQUEST_TIMEOUT = 30000  # ms
 
 
 class Model(object):
