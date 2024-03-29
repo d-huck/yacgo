@@ -24,13 +24,12 @@ def gameplay_worker(ports, i, display, args):
     def game_play_thread():
         model = InferenceClient(ports, args.inference_server_address)
         game_gen = GameGenerator(model, args, display=display)
-        # data = game_gen.sim_data(1024)
-        # for d in data:
-        #     data_client.deposit(d)
+
         try:
             while True:
                 game_gen.sim_game()
                 game_gen = GameGenerator(model, args, display=display)
+                del game_gen
                 gc.collect()
         except KeyboardInterrupt:
             print("Quitting game generation, closing sockets...")
@@ -65,8 +64,8 @@ def main():
             )
         print("Starting games...")
         for i, game in enumerate(games):
-            time.sleep(10)  # stagger start the workers
             game.start()
+            time.sleep(10)  # stagger start the workers
 
         for game in games:
             game.join()
