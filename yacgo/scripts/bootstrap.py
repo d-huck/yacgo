@@ -27,7 +27,7 @@ def random_gameplay(args):
     def game_play_thread():
         model = InferenceRandom()
         game_gen = GameGenerator(model, args, display=False)
-        _ = game_gen.sim_games(64)
+        _ = game_gen.sim_games(2048)
         # finally:
         game_gen.destroy()
         return True
@@ -59,18 +59,18 @@ def main():
     args = make_args()
     # args.wandb = False
 
-    databroker = Process(target=databroker_worker, args=(args,), daemon=True)
-    databroker.start()
+    # databroker = Process(target=databroker_worker, args=(args,), daemon=True)
+    # databroker.start()
     try:
         games = [args for i in range(32000 // 64)]
         pbar = tqdm(total=len(games))
-        with Pool(processes=64) as pool:
+        with Pool(processes=8) as pool:
             for _ in pool.map(random_gameplay, games):
                 pbar.update(1)
     except KeyboardInterrupt:
         pass
-    databroker.terminate()
-    databroker.join()
+    # databroker.terminate()
+    # databroker.join()
 
 
 if __name__ == "__main__":
