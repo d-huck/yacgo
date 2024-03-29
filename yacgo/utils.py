@@ -184,6 +184,9 @@ def make_args():
         default=True,
         help="Whether to refill the replay buffer after training on a state. Defaults to False",
     )
+    parser.add_argument(
+        "--lr", type=float, default=1e-4, help="Learning rate for training"
+    )
 
     # Inference settings
     parser.add_argument(
