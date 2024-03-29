@@ -493,7 +493,7 @@ class DataBroker(object):
                         self.socket.send_multipart([address, b"", b""])
                 else:
                     self.process_data(message, commit=count % 16 == 0)
-                    self.socket.send_multipart([address, b"", b""])
+                    # self.socket.send_multipart([address, b"", b""])
             except zmq.error.Again:
                 pass
             except (KeyboardInterrupt, SystemExit):
@@ -506,7 +506,7 @@ class DataGameClientMixin:
     def __init__(self, args: dict):
         identity = f"GAME-{uuid.uuid4()}".encode()
         self.data_context = zmq.Context.instance()
-        self.data_socket = self.data_context.socket(zmq.REQ)
+        self.data_socket = self.data_context.socket(zmq.DEALER)
         self.data_socket.setsockopt(zmq.IDENTITY, identity)
         self.data_socket.connect(
             f"tcp://{args.inference_server_address}:{args.databroker_port}"
@@ -519,8 +519,9 @@ class DataGameClientMixin:
 
     def deposit(self, example: TrainState):
         """Deposits a single training example into the data broker"""
+        self.data_socket.send(b"", zmq.SNDMORE)
         self.data_socket.send(example.pack())
-        _ = self.data_socket.recv()
+        # _ = self.data_socket.recv()
 
     def destroy(self):
         """Sanely shuts down the zmq client"""
