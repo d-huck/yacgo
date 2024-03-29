@@ -326,7 +326,7 @@ class Trainer(ViTWrapper, DataTrainClientMixin):
         super(Trainer, self).__init__(args)
         DataTrainClientMixin.__init__(self, args)
 
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-4)
+        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=args.lr)
         self.criterion = torch.nn.CrossEntropyLoss()
         self.regressor = torch.nn.MSELoss()
         self.training_steps = args.training_steps_per_epoch

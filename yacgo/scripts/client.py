@@ -28,9 +28,9 @@ def gameplay_worker(ports, i, display, args):
         try:
             while True:
                 game_gen.sim_game()
-                game_gen = GameGenerator(model, args, display=display)
                 del game_gen
                 gc.collect()
+                game_gen = GameGenerator(model, args, display=display)
         except KeyboardInterrupt:
             print("Quitting game generation, closing sockets...")
             game_gen.destroy()

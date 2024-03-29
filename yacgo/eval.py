@@ -59,11 +59,15 @@ def play_game(game_args):
         else:
             model = InferenceClient([model2])
             p2 = MCTSPlayer(govars.WHITE, model, args)
-
-        g = Game(args.board_size, p1, p2, komi, max_turns=True)
-
-        result = g.play_full()
-        return order, result
+        done = False
+        while not done:
+            try:
+                g = Game(args.board_size, p1, p2, komi, max_turns=True)
+                result = g.play_full()
+                return order, result
+            except RecursionError:
+                continue
+            done = True
     except KeyboardInterrupt:
         return order, 0
 
