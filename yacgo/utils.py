@@ -317,7 +317,7 @@ def make_args():
         "--pcap_fast",
         type=int,
         default=100,
-        help="Number of simulations for MCTS. Defaults to 100",
+        help="Number of of fast for MCTS. Defaults to 100",
     )
     parser.add_argument(
         "--pcap_prob",

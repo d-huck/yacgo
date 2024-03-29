@@ -60,7 +60,7 @@ def play_game(game_args):
             model = InferenceClient([model2])
             p2 = MCTSPlayer(govars.WHITE, model, args)
 
-        g = Game(args.board_size, p1, p2, komi)
+        g = Game(args.board_size, p1, p2, komi, max_turns=True)
 
         result = g.play_full()
         return order, result

@@ -15,14 +15,14 @@ class Game:
         self.turn = govars.BLACK
         self.n_turns = 0
         self.max_turns = max_turns
-        self.n_max_turns = board_size * board_size * 2
+        self.n_max_turns = board_size * board_size * 1.1
         self.done = False
         self.score = 0
 
     def step(self):
         if self.max_turns and self.n_turns >= self.n_max_turns:
             self.done = True
-            self.score = DATA_DTYPE(0)
+            self.score = game.winning(self.state, self.komi)
             return self.score
         if not self.done:
             action = self.players[self.turn].sample_action(self.state)
