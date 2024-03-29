@@ -64,7 +64,7 @@ def main():
     try:
         games = [args for i in range(32000 // 64)]
         pbar = tqdm(total=len(games))
-        with Pool(processes=8) as pool:
+        with Pool(processes=16) as pool:
             for _ in pool.map(random_gameplay, games):
                 pbar.update(1)
     except KeyboardInterrupt:
