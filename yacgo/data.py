@@ -355,7 +355,6 @@ class DataBroker(object):
         states = np.stack(states)
         values = np.stack(values)
         policies = np.stack(policies)
-
         batch = TrainingBatch(count, states, values, policies)
         return batch
 
@@ -379,7 +378,7 @@ class DataBroker(object):
                     states = data["states"]
                     values = data["values"]
                     policies = data["policies"]
-                except Exception: # pylint
+                except Exception:  # pylint
                     os.remove(fp)
                     continue
                 if "priorities" in data:

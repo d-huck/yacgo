@@ -142,7 +142,7 @@ def trainer_worker(ports, args):
 
     trainer = Trainer(args)
     best_model = args.model_path
-    if best_model is not None:
+    if args.epoch == 0 and best_model is not None:
         epoch = model_name_to_epoch(best_model) + 1
     else:
         epoch = 0
