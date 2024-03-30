@@ -5,72 +5,58 @@ a newly initialized, untrained model.
 """
 
 # from concurrent.futures import ThreadPoolExecutor
-from multiprocessing import Process, Pool
-import signal
-from tqdm.auto import tqdm
+import gc
+import multiprocessing as mp
+import time
 
-from yacgo.data import DataBroker
+from concurrent.futures import ThreadPoolExecutor
+from multiprocessing import Process
+
 from yacgo.models import InferenceRandom
 from yacgo.train_utils import GameGenerator
 from yacgo.utils import make_args
-import wandb
 
 
 def random_gameplay(args):
-    """Wrapper around a simple gameplay worker.
-
-    Args:
-        port (int): Port server is listening on.
-        args (dict): args dict.
-    """
+    display = True
+    model = InferenceRandom(args)
 
     def game_play_thread():
-        model = InferenceRandom()
-        game_gen = GameGenerator(model, args, display=False)
-        _ = game_gen.sim_games(2048)
-        # finally:
-        game_gen.destroy()
-        return True
+        try:
+            game_gen = GameGenerator(model, args, display=display)
+            while True:
+                game_gen.sim_game()
+                del game_gen
+                gc.collect()
+                game_gen = GameGenerator(model, args, display=display)
+        except KeyboardInterrupt:
+            print("Quitting game generation, closing sockets...")
 
-    return game_play_thread()
-
-
-def databroker_worker(args):
-    """Wrapper around a simple databroker worker.
-
-    Args:
-        port (int): Port server is listening on.
-        args (dict): args dict.
-    """
-    signal.signal(signal.SIGINT, signal.SIG_IGN)
-    if args.wandb:
-        wandb.init(
-            project=args.wandb_project,
-            group=args.wandb_group,
-            job_type="replay_buffer",
-            config=args,
-        )
-
-    broker = DataBroker(args)
-    broker.run()
+    game_play_thread()
 
 
 def main():
+    """
+    Main Process
+    """
     args = make_args()
-    # args.wandb = False
 
-    # databroker = Process(target=databroker_worker, args=(args,), daemon=True)
-    # databroker.start()
+    mp.set_start_method("spawn")
     try:
-        games = [args for i in range(32000 // 64)]
-        pbar = tqdm(total=len(games))
-        with Pool(processes=16) as pool:
-            for _ in pool.map(random_gameplay, games):
-                pbar.update(1)
+        games = []
+        for i in range(args.num_game_processes):
+            games.append(Process(target=random_gameplay, args=(args,), daemon=True))
+        print("Starting games...")
+        for i, game in enumerate(games):
+            game.start()
+            time.sleep(1)  # stagger start the workers
+
+        for game in games:
+            game.join()
     except KeyboardInterrupt:
         pass
-    # databroker.terminate()
-    # databroker.join()
+    finally:
+        print("Exiting...")
 
 
 if __name__ == "__main__":
