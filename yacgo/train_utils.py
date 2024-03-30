@@ -26,7 +26,7 @@ class GameGenerator(DataGameClientMixin):
         self.pcap_train = args.pcap_train
         self.pcap_fast = args.pcap_fast
         self.pcap_prob = args.pcap_prob
-        self.max_turns = self.board_size * self.board_size * 2
+        self.max_turns = self.board_size * self.board_size * 1.1
         self.n_turns = 0
         self.args = args
         self.display = display
@@ -60,7 +60,6 @@ class GameGenerator(DataGameClientMixin):
 
             for d in data:
                 self.deposit(d)
-            gc.collect()
 
         except KeyboardInterrupt:
             print("Quitting game generation, closing sockets...")
