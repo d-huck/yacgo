@@ -251,7 +251,7 @@ class DataBroker(object):
         self.min_size = args.replay_buffer_min_size
         self.max_size = args.replay_buffer_size
         self.port = args.databroker_port
-        self.replay_buffer = PriorityQueue()
+        self.replay_buffer = PriorityQueue(maxsize=args.replay_buffer_size)
         self.cache_dir = args.data_cache_dir
         self.context = zmq.Context.instance()
         self.socket = self.context.socket(zmq.ROUTER)
@@ -498,6 +498,7 @@ class DataBroker(object):
                 pass
             except (KeyboardInterrupt, SystemExit):
                 self.running = False
+            count += 1
 
 
 class DataGameClientMixin:
@@ -505,6 +506,7 @@ class DataGameClientMixin:
 
     def __init__(self, args: dict):
         identity = f"GAME-{uuid.uuid4()}".encode()
+        print(f"Starting {identity}")
         self.data_context = zmq.Context.instance()
         self.data_socket = self.data_context.socket(zmq.REQ)
         self.data_socket.setsockopt(zmq.IDENTITY, identity)
