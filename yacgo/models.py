@@ -126,7 +126,7 @@ class ViTWrapper(object):
 class InferenceRandom(Model):
     """Simple Model interface that returns random values for playing games against"""
 
-    def __init__(self):
+    def __init__(self, args):
         pass
 
     def forward(self, inputs):
@@ -143,7 +143,7 @@ class InferenceEqual(Model):
 
     def forward(self, inputs):
         pol = np.zeros(game.action_size(inputs)) + (1 / game.action_size(inputs))
-        return 0, pol
+        return DATA_DTYPE(0.0), DATA_DTYPE(pol)
 
 
 class InferenceLocal(ViTWrapper, Model):
@@ -327,7 +327,7 @@ class Trainer(ViTWrapper, DataTrainClientMixin):
         DataTrainClientMixin.__init__(self, args)
 
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=args.lr)
-        self.criterion = torch.nn.CrossEntropyLoss()
+        self.criterion = torch.nn.BCEWithLogitsLoss()
         self.regressor = torch.nn.MSELoss()
         self.training_steps = args.training_steps_per_epoch
         self.wandb = args.wandb
@@ -345,6 +345,7 @@ class Trainer(ViTWrapper, DataTrainClientMixin):
         Returns:
             torch.float32: loss of the training step
         """
+        
         states = torch.tensor(states).to(self.device)
         values = torch.tensor(values).to(self.device)
         policies = torch.tensor(policies).to(self.device)
