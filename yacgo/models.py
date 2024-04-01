@@ -63,8 +63,9 @@ class ViTWrapper(object):
         self.model = EfficientFormerV2(
             depths=depths,
             in_chans=args.num_feature_channels,
+            downsamples=(False, False, False, False),
             img_size=args.board_size,
-            embed_dims=embed_dims,
+            embed_dims=(128, 128, 128, 128),
             num_vit=2,
             mlp_ratios=mlp_ratios,
             num_classes=args.board_size**2 + 1,
@@ -345,15 +346,30 @@ class Trainer(ViTWrapper, DataTrainClientMixin):
         Returns:
             torch.float32: loss of the training step
         """
-        
+
         states = torch.tensor(states).to(self.device)
         values = torch.tensor(values).to(self.device)
-        policies = torch.tensor(policies).to(self.device)
+        policies = torch.clamp(torch.tensor(policies).to(self.device), 0, 1)
         self.optimizer.zero_grad()
         values_pred, policy_pred = self.model.forward(states)
-        loss = 0.5 * self.criterion(
-            policy_pred.squeeze(), policies
-        ) + 0.5 * self.regressor(values_pred.squeeze(), values)
+        # print(policies[0], policy_pred[0])
+        policy_pred = torch.clamp(policy_pred.squeeze(), 0, 1)
+        policy_loss = self.criterion(policy_pred, policies)
+        value_loss = self.regressor(values_pred.squeeze(), values)
+        if policy_loss.isnan():
+            raise ValueError("Policy Loss is NaN!")
+        if value_loss.isnan():
+            raise ValueError("Value Loss is NaN!")
+        loss = 0.5 * policy_loss + 0.5 * value_loss
+        if loss.isnan():
+            error_str = f"Loss is NaN! Loss: {loss}"
+            if np.isnan(states.cpu().numpy()).any():
+                error_str += " Found NaN in state"
+            if np.isnan(policies.cpu().numpy()).any():
+                error_str += " Found NaN in policies"
+            if np.isnan(values.cpu().numpy()).any():
+                error_str += " Found NaN in values"
+            raise ValueError(error_str)
         loss.backward()
         self.optimizer.step()
         if self.wandb:
@@ -381,8 +397,8 @@ class Trainer(ViTWrapper, DataTrainClientMixin):
             losses.append(loss)
             avg = sum(losses) / len(losses)
             pbar.update(1)
-            pbar.set_postfix({"Loss": f"{avg:04.4f}"})
-            if len(losses) > 10:
+            pbar.set_postfix({f"{len(losses)}MA Loss": f"{avg:04.4f}"})
+            if len(losses) >= 10:
                 _ = losses.pop(0)
 
 

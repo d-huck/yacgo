@@ -60,7 +60,13 @@ class TrainState:
             pass  # do nothing
         else:
             raise ValueError("Value must be a single number")
-
+        if np.isnan(value):
+            raise ValueError("Value cannot be NaN")
+        if np.isnan(state).any():
+            raise ValueError("State cannot contain NaN")
+        if np.isnan(policy).any():
+            raise ValueError("Policy cannot contain NaN")
+        assert value >= -1 and value <= 1
         self.state = state
         self.value = value
         self.policy = policy
@@ -256,17 +262,16 @@ class DataBroker(object):
         self.context = zmq.Context.instance()
         self.socket = self.context.socket(zmq.ROUTER)
         self.socket.bind(f"tcp://*:{self.port}")
-        self.socket.setsockopt(zmq.LINGER, 0)
-        self.socket.setsockopt(zmq.RCVTIMEO, 1)
+
         self.refill_buffer = args.refill_buffer
         self.batch_size = args.training_batch_size
         self.min_size = (
             args.training_batch_size
             if not self.refill_buffer
-            else 8 * args.training_batch_size
+            else 200 * args.board_size**2 * 1.1 * args.pcap_prob  # 200 games
         )
         self.max_priority = (
-            self.batch_size * args.training_steps_per_epoch * HIGH_PRIORITY * 2
+            self.batch_size * args.training_steps_per_epoch * HIGH_PRIORITY
         )
         self.train_random_symmetry = args.train_random_symmetry
         self.forget_rate = args.forget_rate
@@ -505,11 +510,12 @@ class DataGameClientMixin:
     """Client for a GameGenerator to interact with the Databroker"""
 
     def __init__(self, args: dict):
-        identity = f"GAME-{uuid.uuid4()}".encode()
-        print(f"Starting {identity}")
+        self.identity = f"GAME-{uuid.uuid4()}".encode()
         self.data_context = zmq.Context.instance()
+        self.server = args.inference_server_address
+        self.port = args.databroker_port
         self.data_socket = self.data_context.socket(zmq.DEALER)
-        self.data_socket.setsockopt(zmq.IDENTITY, identity)
+        self.data_socket.setsockopt(zmq.IDENTITY, self.identity)
         self.data_socket.connect(
             f"tcp://{args.inference_server_address}:{args.databroker_port}"
         )
@@ -523,7 +529,6 @@ class DataGameClientMixin:
         """Deposits a single training example into the data broker"""
         self.data_socket.send(b"", zmq.SNDMORE)
         self.data_socket.send(example.pack())
-        # _ = self.data_socket.recv()
 
     def destroy(self):
         """Sanely shuts down the zmq client"""
