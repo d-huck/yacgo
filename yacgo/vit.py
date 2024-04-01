@@ -586,21 +586,26 @@ class ValueHead(nn.Module):
     def __init__(
         self,
         num_features,
+        num_classes,
         global_pool="avg",
         drop_rate=0.0,
     ):
         super().__init__()
-        self.head_drop = nn.Dropout(drop_rate)
         self.global_pool = global_pool
-        self.head = nn.Linear(num_features, 1)
-        self.act = nn.Tanh()
+        linear_in = num_classes - 1
+        self.head = nn.Sequential(
+            nn.Conv2d(num_features, 1, 1, 1),
+            nn.BatchNorm2d(1),
+            nn.Flatten(),
+            nn.ReLU(),
+            nn.Linear(linear_in, 256),
+            nn.ReLU(),
+            nn.Linear(256, 1),
+            nn.Tanh(),
+        )
 
     def forward(self, x):
-        if self.global_pool == "avg":
-            x = x.mean(dim=(2, 3))
-        x = self.head_drop(x)
-        x = self.head(x)
-        return self.act(x)
+        return self.head(x)
 
 
 class PolicyHead(nn.Module):
@@ -618,13 +623,13 @@ class PolicyHead(nn.Module):
         self.num_actions = num_actions
         self.global_pool = global_pool
         self.dist = distillation
-        board_size = num_actions - 1
+        board_area = (num_actions - 1) * 2
         self.head = nn.Sequential(
             nn.Conv2d(num_features, 2, 1, 1),
             nn.BatchNorm2d(2),
             nn.Flatten(),
             nn.ReLU(),
-            nn.Linear(board_size * 2, num_actions),
+            nn.Linear(board_area, num_actions),
         )
         self.head_dist = (
             nn.Linear(num_features, num_actions)
@@ -642,8 +647,7 @@ class PolicyHead(nn.Module):
         x = self.head_drop(x)
         if pre_logits:
             return x
-        x = self.head(x)
-        return x
+        return self.head(x)
 
 
 class EfficientFormerV2(nn.Module):
@@ -737,6 +741,7 @@ class EfficientFormerV2(nn.Module):
 
         self.value_head = ValueHead(
             embed_dims[-1],
+            num_classes,
             drop_rate=drop_rate,
             global_pool=global_pool,
         )
