@@ -63,9 +63,9 @@ class ViTWrapper(object):
         self.model = EfficientFormerV2(
             depths=depths,
             in_chans=args.num_feature_channels,
-            downsamples=(False, False, False, False),
+            # downsamples=(False, False, False, False),
             img_size=args.board_size,
-            embed_dims=(128, 128, 128, 128),
+            embed_dims=embed_dims,
             num_vit=2,
             mlp_ratios=mlp_ratios,
             num_classes=args.board_size**2 + 1,

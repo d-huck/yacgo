@@ -321,7 +321,7 @@ class Downsample(nn.Module):
         in_chs,
         out_chs,
         kernel_size=3,
-        stride=2,
+        stride=1,
         padding=1,
         resolution=7,
         use_attn=False,
@@ -552,7 +552,7 @@ class EfficientFormerV2Stage(nn.Module):
             dim = dim_out
             resolution = tuple([math.ceil(r / 2) for r in resolution])
         else:
-            assert dim == dim_out
+            # assert dim == dim_out, "Dimensional shift :("
             self.downsample = nn.Identity()
 
         blocks = []
@@ -706,8 +706,8 @@ class EfficientFormerV2(nn.Module):
                 depth=depths[i],
                 resolution=curr_resolution,
                 downsample=downsamples[i],
-                # block_stride=2 if i == 2 else None,
-                downsample_use_attn=i >= 3,
+                block_stride=2 if i == 2 else None,
+                downsample_use_attn=False,  # i >= 3,
                 block_use_attn=i >= 2,
                 num_vit=num_vit,
                 mlp_ratio=mlp_ratios[i],
@@ -718,7 +718,7 @@ class EfficientFormerV2(nn.Module):
                 norm_layer=norm_layer,
             )
             if downsamples[i]:
-                stride *= 2
+                stride *= 1
             prev_dim = embed_dims[i]
             self.feature_info += [
                 dict(num_chs=prev_dim, reduction=stride, module=f"stages.{i}")
