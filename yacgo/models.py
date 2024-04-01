@@ -349,19 +349,19 @@ class Trainer(ViTWrapper, DataTrainClientMixin):
 
         states = torch.tensor(states).to(self.device)
         values = torch.tensor(values).to(self.device)
-        policies = torch.clamp(torch.tensor(policies).to(self.device), 0, 1)
+        policies = torch.tensor(policies).to(self.device)
         self.optimizer.zero_grad()
         values_pred, policy_pred = self.model.forward(states)
         # print(policies[0], policy_pred[0])
         policy_pred = torch.clamp(policy_pred.squeeze(), 0, 1)
         policy_loss = self.criterion(policy_pred, policies)
         value_loss = self.regressor(values_pred.squeeze(), values)
-        if policy_loss.isnan():
-            raise ValueError("Policy Loss is NaN!")
-        if value_loss.isnan():
-            raise ValueError("Value Loss is NaN!")
         loss = 0.5 * policy_loss + 0.5 * value_loss
         if loss.isnan():
+            if policy_loss.isnan():
+                raise ValueError("Policy Loss is NaN!")
+            if value_loss.isnan():
+                raise ValueError("Value Loss is NaN!")
             error_str = f"Loss is NaN! Loss: {loss}"
             if np.isnan(states.cpu().numpy()).any():
                 error_str += " Found NaN in state"
