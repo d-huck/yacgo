@@ -618,8 +618,13 @@ class PolicyHead(nn.Module):
         self.num_actions = num_actions
         self.global_pool = global_pool
         self.dist = distillation
-        self.head = (
-            nn.Linear(num_features, num_actions) if num_actions > 0 else nn.Identity()
+        board_size = num_actions - 1
+        self.head = nn.Sequential(
+            nn.Conv2d(num_features, 2, 1, 1),
+            nn.BatchNorm2d(2),
+            nn.Flatten(),
+            nn.ReLU(),
+            nn.Linear(board_size * 2, num_actions),
         )
         self.head_dist = (
             nn.Linear(num_features, num_actions)
@@ -634,16 +639,11 @@ class PolicyHead(nn.Module):
         self.distilled_training = enable
 
     def forward(self, x, pre_logits: bool = False):
-        if self.global_pool == "avg":
-            x = x.mean(dim=(2, 3))
         x = self.head_drop(x)
         if pre_logits:
             return x
-        x, x_dist = self.head(x), self.head_dist(x)
-        if self.distilled_training and self.training and not torch.jit.is_scripting():
-            return x, x_dist
-        else:
-            return (x + x_dist) / 2
+        x = self.head(x)
+        return x
 
 
 class EfficientFormerV2(nn.Module):
