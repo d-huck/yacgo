@@ -349,7 +349,7 @@ class DataBroker(object):
 
             refill = True
             if data.priority > self.max_priority:
-                refill = np.random.rand() > self.forget_rate
+                refill = np.random.rand() < self.forget_rate
             if refill and self.refill_buffer:
                 data.priority += (
                     HIGH_PRIORITY + randint(-HIGH_PRIORITY, HIGH_PRIORITY) // 4
