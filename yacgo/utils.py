@@ -365,6 +365,12 @@ def make_args():
         default=0.55,
         help="Percentage of games a model needs to win to become new best model. Defaults to 0.55",
     )
+    parser.add_argument(
+        "--max_priority",
+        type=float,
+        default=1_000_000,
+        help="Maximum priority for replay buffer. Defaults to 1_000_000",
+    )
 
     # Misc
     parser.add_argument(
