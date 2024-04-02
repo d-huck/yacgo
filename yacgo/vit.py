@@ -40,6 +40,7 @@ from timm.models._builder import build_model_with_cfg
 from timm.models._manipulate import checkpoint_seq
 from timm.models._registry import generate_default_cfgs
 
+torch.autograd.set_detect_anomaly(True)
 
 EfficientFormer_width = {
     "L": (40, 80, 192, 384),  # 26m 83.3% 6attn
@@ -199,7 +200,6 @@ class Attention2d(torch.nn.Module):
         x = x.reshape(B, self.dh, self.resolution[0], self.resolution[1]) + v_local
         if self.upsample is not None:
             x = self.upsample(x)
-
         x = self.act(x)
         x = self.proj(x)
         return x
@@ -438,13 +438,12 @@ class EfficientFormerV2Block(nn.Module):
         use_attn=True,
     ):
         super().__init__()
-
         if use_attn:
             self.token_mixer = Attention2d(
                 dim,
                 resolution=resolution,
                 act_layer=act_layer,
-                stride=stride,
+                stride=None,
             )
             self.ls1 = (
                 LayerScale2d(dim, layer_scale_init_value)
@@ -527,7 +526,7 @@ class EfficientFormerV2Stage(nn.Module):
         block_stride=None,
         downsample_use_attn=False,
         block_use_attn=False,
-        num_vit=1,
+        num_vit=4,
         mlp_ratio=4.0,
         proj_drop=0.0,
         drop_path=0.0,
@@ -572,13 +571,17 @@ class EfficientFormerV2Stage(nn.Module):
             )
             blocks += [b]
         self.blocks = nn.Sequential(*blocks)
+        self.upsample = nn.Conv2d(dim, dim_out, 1, 1)
+        self.bn = nn.BatchNorm2d(dim_out)
 
     def forward(self, x):
-        x = self.downsample(x)
+        # x = self.downsample(x)
         if self.grad_checkpointing and not torch.jit.is_scripting():
             x = checkpoint_seq(self.blocks, x)
         else:
             x = self.blocks(x)
+            x = self.upsample(x)
+            x = self.bn(x)
         return x
 
 
