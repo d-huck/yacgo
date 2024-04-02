@@ -67,6 +67,8 @@ class ViTWrapper(object):
             img_size=args.board_size,
             embed_dims=embed_dims,
             num_vit=2,
+            drop_path_rate=0.0,
+            layer_scale_init_value=None,
             mlp_ratios=mlp_ratios,
             num_classes=args.board_size**2 + 1,
         ).to(self.device)
@@ -190,7 +192,7 @@ class InferenceClient(Model):
         """Reliable pattern for sending requests to the server. Will retry on failure indefinitely"""
         random.shuffle(self.ports)
         for port in self.ports:
-            server = f"tcp://{self.server_address}:{port}"
+            server = f"ipc:///tmp/zmq{port}"
             client = self.context.socket(zmq.REQ)
             client.setsockopt(zmq.LINGER, 0)
             client.connect(server)
@@ -239,7 +241,7 @@ class InferenceServer(ViTWrapper):
         self.port = port
         self.context = zmq.Context.instance()
         self.socket = self.context.socket(zmq.ROUTER)
-        self.socket.bind(f"tcp://*:{self.port}")
+        self.socket.bind(f"ipc:///tmp/zmq{self.port}")
         self.socket.setsockopt(zmq.LINGER, 0)
 
         self.socket.setsockopt(zmq.RCVTIMEO, 0)
@@ -412,9 +414,9 @@ class ModelServerMixin:
         self.port = args.model_server_port
         self.context = zmq.Context.instance()
         self.socket = self.context.socket(zmq.REP)
-        self.socket.bind(f"tcp://*:{self.port}")
+        self.socket.bind(f"ipc:///tmp/zmq{self.port}")
         self.publisher = self.context.socket(zmq.PUB)
-        self.publisher.bind(f"tcp://*:{self.port + 1}")
+        self.publisher.bind(f"ipc:///tmp/zmq{self.port + 1}")
 
         def close():
             self.context.destroy()
@@ -428,9 +430,9 @@ class ModelClientMixin:
     def __init__(self, address: str, port: int):
         self.context = zmq.Context.instance()
         self.socket = self.context.socket(zmq.REQ)
-        self.socket.connect(f"tcp://{address}:{port}")
+        self.socket.connect(f"ipc:///tmp/zmq{port}")
         self.subscriber = self.context.socket(zmq.SUB)
-        self.subscriber.connect(f"tcp://{address}:{port + 1}")
+        self.subscriber.connect(f"ipc:///tmp/zmq{port + 1}")
 
         def close():
             self.context.destroy()
