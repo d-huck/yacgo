@@ -120,14 +120,16 @@ class Attention2d(torch.nn.Module):
         self.num_heads = num_heads
         self.scale = key_dim**-0.5
         self.key_dim = key_dim
+        if stride is not None:
+            padding = stride - 1
 
         resolution = to_2tuple(resolution)
         if stride is not None:
             resolution = tuple([math.ceil(r / stride) for r in resolution])
             self.stride_conv = ConvNorm(
-                dim, dim, kernel_size=3, stride=stride, groups=dim
+                dim, dim, kernel_size=3, stride=stride, padding=padding, groups=dim
             )
-            self.upsample = nn.Upsample(scale_factor=stride, mode="bilinear")
+            self.upsample = nn.Upsample(scale_factor=1.5, mode="bilinear")
         else:
             self.stride_conv = None
             self.upsample = None
@@ -321,7 +323,7 @@ class Downsample(nn.Module):
         in_chs,
         out_chs,
         kernel_size=3,
-        stride=1,
+        stride=2,
         padding=1,
         resolution=7,
         use_attn=False,
@@ -331,6 +333,7 @@ class Downsample(nn.Module):
         super().__init__()
 
         kernel_size = to_2tuple(kernel_size)
+        padding = stride
         stride = to_2tuple(stride)
         padding = to_2tuple(padding)
         norm_layer = norm_layer or nn.Identity()
@@ -443,7 +446,7 @@ class EfficientFormerV2Block(nn.Module):
                 dim,
                 resolution=resolution,
                 act_layer=act_layer,
-                stride=None,
+                stride=stride,
             )
             self.ls1 = (
                 LayerScale2d(dim, layer_scale_init_value)
@@ -490,7 +493,8 @@ class Stem(nn.Sequential):
         else:
             stride1 = stride // 2
             stride2 = stride // 2 + stride % 2
-
+        padding1 = stride1 - 1
+        padding2 = stride2 - 1
         self.stride = 4
         self.conv1 = ConvNormAct(
             in_chs,
@@ -538,7 +542,6 @@ class EfficientFormerV2Stage(nn.Module):
         self.grad_checkpointing = False
         mlp_ratio = to_ntuple(depth)(mlp_ratio)
         resolution = to_2tuple(resolution)
-
         if downsample:
             self.downsample = Downsample(
                 dim,
@@ -549,9 +552,9 @@ class EfficientFormerV2Stage(nn.Module):
                 act_layer=act_layer,
             )
             dim = dim_out
-            resolution = tuple([math.ceil(r / 2) for r in resolution])
+            # resolution = tuple([math.ceil(r / 2) for r in resolution])
         else:
-            # assert dim == dim_out, "Dimensional shift :("
+            assert dim == dim_out
             self.downsample = nn.Identity()
 
         blocks = []
@@ -571,17 +574,15 @@ class EfficientFormerV2Stage(nn.Module):
             )
             blocks += [b]
         self.blocks = nn.Sequential(*blocks)
-        self.upsample = nn.Conv2d(dim, dim_out, 1, 1)
+        self.upsample = nn.Conv2d(dim, dim_out, 1, stride=3, padding=2)
         self.bn = nn.BatchNorm2d(dim_out)
 
     def forward(self, x):
-        # x = self.downsample(x)
+        x = self.downsample(x)
         if self.grad_checkpointing and not torch.jit.is_scripting():
             x = checkpoint_seq(self.blocks, x)
         else:
             x = self.blocks(x)
-            x = self.upsample(x)
-            x = self.bn(x)
         return x
 
 
@@ -702,12 +703,12 @@ class EfficientFormerV2(nn.Module):
         mlp_ratios = to_ntuple(num_stages)(mlp_ratios)
         stages = []
         for i in range(num_stages):
-            curr_resolution = tuple([math.ceil(s / stride) for s in img_size])
+            # curr_resolution = tuple([math.ceil(s / stride) for s in img_size])
             stage = EfficientFormerV2Stage(
                 prev_dim,
                 embed_dims[i],
                 depth=depths[i],
-                resolution=curr_resolution,
+                resolution=img_size,
                 downsample=downsamples[i],
                 block_stride=2 if i == 2 else None,
                 downsample_use_attn=False,  # i >= 3,
@@ -721,7 +722,7 @@ class EfficientFormerV2(nn.Module):
                 norm_layer=norm_layer,
             )
             if downsamples[i]:
-                stride *= 1
+                stride *= 2
             prev_dim = embed_dims[i]
             self.feature_info += [
                 dict(num_chs=prev_dim, reduction=stride, module=f"stages.{i}")
@@ -813,9 +814,9 @@ class EfficientFormerV2(nn.Module):
         return self.forward_head(x)
 
     def forward_state(self, state):
-        # value, policy = self(torch.from_numpy(state).float().unsqueeze(0))
-        # return value.item(), policy.squeeze().detach().numpy()
-        return np.random.random(), np.random.random(26)
+        value, policy = self(torch.from_numpy(state).float().unsqueeze(0))
+        return value.item(), policy.squeeze().detach().numpy()
+        # return np.random.random(), np.random.random(26)
 
 
 def _cfg(url="", **kwargs):
