@@ -271,7 +271,7 @@ class DataBroker(object):
             if not self.refill_buffer
             else 200 * args.board_size**2 * 1.1 * args.pcap_prob  # 200 games
         )
-        self.max_priority = args.training_steps_per_epoch * HIGH_PRIORITY
+        self.max_priority = args.max_priority
         self.train_random_symmetry = args.train_random_symmetry
         self.forget_rate = args.forget_rate
         self.wandb = args.wandb

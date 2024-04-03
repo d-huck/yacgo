@@ -174,7 +174,7 @@ def trainer_worker(ports, args):
 
         # run a training run and save the model
         trainer.run(epoch)
-        candidate = trainer.save_pretrained(candidate=True)
+        candidate = trainer.save_pretrained(candidate=True, path=args.models_dirs)
 
         for server in servers:
             server.terminate()
