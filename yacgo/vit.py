@@ -120,16 +120,15 @@ class Attention2d(torch.nn.Module):
         self.num_heads = num_heads
         self.scale = key_dim**-0.5
         self.key_dim = key_dim
-        if stride is not None:
-            padding = stride - 1
 
         resolution = to_2tuple(resolution)
+        orig_resolution = resolution
         if stride is not None:
             resolution = tuple([math.ceil(r / stride) for r in resolution])
             self.stride_conv = ConvNorm(
-                dim, dim, kernel_size=3, stride=stride, padding=padding, groups=dim
+                dim, dim, kernel_size=3, stride=stride, groups=dim
             )
-            self.upsample = nn.Upsample(scale_factor=1.5, mode="bilinear")
+            self.upsample = nn.Upsample(size=orig_resolution, mode="bilinear")
         else:
             self.stride_conv = None
             self.upsample = None
@@ -185,7 +184,6 @@ class Attention2d(torch.nn.Module):
         B, C, H, W = x.shape  # pylint: disable=unused-variable
         if self.stride_conv is not None:
             x = self.stride_conv(x)
-
         q = self.q(x).reshape(B, self.num_heads, -1, self.N).permute(0, 1, 3, 2)
         k = self.k(x).reshape(B, self.num_heads, -1, self.N).permute(0, 1, 2, 3)
         v = self.v(x)
@@ -332,10 +330,11 @@ class Downsample(nn.Module):
     ):
         super().__init__()
 
+        padding = kernel_size - 1
         kernel_size = to_2tuple(kernel_size)
-        padding = stride
         stride = to_2tuple(stride)
         padding = to_2tuple(padding)
+        resolution = to_2tuple(resolution)
         norm_layer = norm_layer or nn.Identity()
         self.conv = ConvNorm(
             in_chs,
@@ -355,12 +354,13 @@ class Downsample(nn.Module):
             )
         else:
             self.attn = None
+        self.upsample = nn.Upsample(size=resolution, mode="bilinear")
 
     def forward(self, x):
         out = self.conv(x)
         if self.attn is not None:
             return self.attn(x) + out
-        return out
+        return self.upsample(out)
 
 
 class ConvMlpWithNorm(nn.Module):
@@ -458,7 +458,7 @@ class EfficientFormerV2Block(nn.Module):
             self.token_mixer = None
             self.ls1 = None
             self.drop_path1 = None
-
+        # mid_conv = not use_attn
         self.mlp = ConvMlpWithNorm(
             in_features=dim,
             hidden_features=int(dim * mlp_ratio),
@@ -476,8 +476,14 @@ class EfficientFormerV2Block(nn.Module):
 
     def forward(self, x):
         if self.token_mixer is not None:
-            x = x + self.drop_path1(self.ls1(self.token_mixer(x)))
-        x = x + self.drop_path2(self.ls2(self.mlp(x)))
+            x_ = self.token_mixer(x)
+            x_ = self.ls1(x_)
+            x = x + self.drop_path1(x_)
+            # x = x + self.drop_path1(self.ls1(self.token_mixer(x)))
+        x_ = self.mlp(x)
+        x_ = self.ls2(x_)
+        x = x + self.drop_path2(x_)
+        # x = x + self.drop_path2(self.ls2(self.mlp(x)))
         return x
 
 
