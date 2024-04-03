@@ -253,7 +253,7 @@ def make_args():
         "--models_dir",
         type=str,
         default="models/",
-        help="Directory to store models that beat the previous best."
+        help="Directory to store models that beat the previous best.",
     )
     parser.add_argument(
         "--data_cache_dir",
