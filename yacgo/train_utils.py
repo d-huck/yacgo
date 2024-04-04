@@ -59,7 +59,8 @@ class GameGenerator(DataGameClientMixin):
                 self.n_turns += 1
 
             for d in data:
-                self.deposit(d)
+                d.value = game.winning(state)
+                self.deposit(d.transform())
 
         except KeyboardInterrupt:
             print("Quitting game generation, closing sockets...")

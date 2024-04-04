@@ -27,13 +27,16 @@ from typing import Union
 import msgpack
 import numpy as np
 import torch
+from torchvision.transforms import RandomCrop
 import zmq
+from yacgo.go import govars
 
 import wandb
 
 DEPOSIT = 0
 GET_BATCH = 0
 RESET = 1
+FULL_BOARD = 19
 
 HIGH_PRIORITY = 1000
 TRAINING_BATCH = 1
@@ -44,12 +47,19 @@ TORCH_DTYPE = torch.float32
 
 logger = logging.getLogger(__name__)
 
+transform = RandomCrop(FULL_BOARD, padding=0, pad_if_needed=True)
+
 
 @dataclass  # Still use data class to get the extra __repr__ and __eq__ methods for free
 class TrainState:
     """Dataclass for a single training example. Contains a state, value, and policy."""
 
-    def __init__(self, state: np.ndarray, value: np.float32, policy: np.ndarray):
+    def __init__(
+        self,
+        state: np.ndarray,
+        value: np.float32,
+        policy: np.ndarray,
+    ):
         if isinstance(value, (int, float)):
             value = DATA_DTYPE(value)
         elif isinstance(value, list):
@@ -82,6 +92,21 @@ class TrainState:
         p = (self.policy.shape, self.policy.tobytes())
 
         return msgpack.packb((s, v, p))
+
+    def transform(self):
+        """
+        Transforms the state into a standard board size, placing the current
+        board at a random location within the full board.
+        """
+        self.state = transform(torch.tensor(self.state)).numpy()
+        assert (
+            self.state.dtype == DATA_DTYPE
+        ), "State must be of type np.float32 after transform"
+
+        policy_mask = np.append(self.state[govars.BOARD_MASK].ravel(), 1.0)
+        _p = np.zeros_like(policy_mask)
+        _p[policy_mask == 1] = self.policy
+        self.policy = _p
 
     @classmethod
     def unpack(cls, message: bytearray) -> "TrainState":

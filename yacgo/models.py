@@ -12,12 +12,20 @@ from typing import Tuple
 
 import numpy as np
 import torch
+from torchvision.transforms import RandomCrop
 import wandb
 import zmq
 from tqdm.auto import tqdm
 
-from yacgo.data import DATA_DTYPE, DataTrainClientMixin, Inference, State, TrainState
-from yacgo.go import game
+from yacgo.data import (
+    DATA_DTYPE,
+    FULL_BOARD,
+    DataTrainClientMixin,
+    Inference,
+    State,
+    TrainState,
+)
+from yacgo.go import game, govars
 from yacgo.vit import (
     EfficientFormer_depth,
     EfficientFormer_expansion_ratios,
@@ -64,20 +72,20 @@ class ViTWrapper(object):
             depths=depths,
             in_chans=args.num_feature_channels,
             # downsamples=(False, False, False, False),
-            img_size=args.board_size,
+            img_size=FULL_BOARD,
             embed_dims=embed_dims,
             num_vit=2,
             drop_path_rate=0.0,
             layer_scale_init_value=None,
             mlp_ratios=mlp_ratios,
-            num_classes=args.board_size**2 + 1,
+            num_classes=FULL_BOARD**2 + 1,
         ).to(self.device)
         self.model_size = args.model_size
         if model_path is not None:
             self.load_pretrained(model_path)
         elif args.model_path is not None:
             self.load_pretrained(args.model_path)
-        self.board_size = args.board_size
+        self.board_size = FULL_BOARD
         self.n_chans = args.num_feature_channels
 
     def __repr__(self):
@@ -182,6 +190,7 @@ class InferenceClient(Model):
         self.context = zmq.Context.instance()
         self.server_address = server_address
         self.ports = ports
+        self.transform = RandomCrop(FULL_BOARD, padding=0, pad_if_needed=True)
 
         def close():
             self.context.destroy()
@@ -209,6 +218,10 @@ class InferenceClient(Model):
 
             return reply
 
+    def to_full_board(self, state):
+        """Transforms a state to a full board state"""
+        return self.transform(torch.tensor(state)).numpy()
+
     def forward(self, inputs: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """_summary_
 
@@ -218,13 +231,22 @@ class InferenceClient(Model):
         Returns:
             _type_: _description_
         """
-        state = State(inputs).pack()
+
+        transformed = self.to_full_board(inputs)
+        assert (
+            transformed.dtype == DATA_DTYPE
+        ), "Data type must be DATA_DTYPE after transformation"
+        state = State(transformed).pack()
+
         inf = None
         while inf is None:
             inf = self.try_request(state)
         inf = Inference.unpack(inf)
 
-        return inf.value, inf.policy
+        board_mask = np.append(transformed[govars.BOARD_MASK].ravel(), 1)
+        policy = inf.policy[board_mask == 1]  # only take the valid moves
+        policy = np.exp(policy) / sum(np.exp(policy))  # softmax
+        return inf.value, policy
 
 
 class InferenceServer(ViTWrapper):
