@@ -28,6 +28,7 @@ from yacgo.go import govars, state_utils
 def init_state(size):
     # return initial board (numpy board)
     state = np.zeros((govars.NUM_CHNLS, size, size), dtype=DATA_DTYPE)
+    state[govars.BOARD_MASK] = 1
     return state
 
 
@@ -108,7 +109,7 @@ def next_state(state, action1d, canonical=False):
         state = canonical_form(state)
 
     # shift history
-    state[govars.FIRST_HIST_CHNL + 1:] = state[govars.FIRST_HIST_CHNL:-1]
+    state[govars.FIRST_HIST_CHNL + 1 :] = state[govars.FIRST_HIST_CHNL : -1]
     state[govars.FIRST_HIST_CHNL] = 0
     if not passed:
         state[govars.FIRST_HIST_CHNL][action2d] = 1
@@ -277,7 +278,7 @@ def winning(state, komi=0):
     area_difference = black_area - white_area
     komi_correction = area_difference - komi
 
-    return np.sign(komi_correction)
+    return DATA_DTYPE(np.sign(komi_correction))
 
 
 def batch_winning(state, komi=0):
@@ -285,7 +286,7 @@ def batch_winning(state, komi=0):
     batch_area_difference = batch_black_area - batch_white_area
     batch_komi_correction = batch_area_difference - komi
 
-    return np.sign(batch_komi_correction)
+    return DATA_DTYPE(np.sign(batch_komi_correction))
 
 
 def turn(state):

@@ -59,6 +59,8 @@ class GameGenerator(DataGameClientMixin):
                 self.n_turns += 1
 
             for d in data:
+                d.value = game.winning(state)
+                d.transform()
                 self.deposit(d)
 
         except KeyboardInterrupt:
