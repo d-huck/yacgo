@@ -673,6 +673,7 @@ class GameResultSummary:
         self,
         elo_prior_games: float,
         estimate_first_player_advantage: bool,
+        prior_player: Tuple[str, float] = None,
     ):
         self.results = {}  # dict of { (player1_name, player2_name) : GameRecord }
 
@@ -683,6 +684,7 @@ class GameResultSummary:
         self._estimate_first_player_advantage = estimate_first_player_advantage
         self._elo_info = None
         self._game_count = 0
+        self.prior_player = prior_player
 
     def add_games_from_file_or_dir(self, input_file_or_dir: str, recursive=False):
         """Add games found in input_file_or_dir into the results. Repeated paths to the same file across multiple calls will be ignored."""
@@ -783,7 +785,10 @@ class GameResultSummary:
             f"Used a prior of {self._elo_prior_games} games worth that each player is near Elo 0."
         )
 
-    def get_elos(self) -> EloInfo:
+    def get_elos(self, recompute=False) -> EloInfo:
+        if recompute:
+            self._elo_info = self._estimate_elo()
+            return self._elo_info
         return self._compute_elos_if_needed()
 
     def get_game_results(self) -> Dict:
@@ -868,6 +873,8 @@ class GameResultSummary:
             itertools.chain(*(name_pair for name_pair in self.results.keys()))
         )
         data = []
+        if self.prior_player is not None:
+            data.extend(make_single_player_prior(self.prior_player[0], 1e10, self.prior_player[1]))
         for pla_first in pla_names:
             for pla_second in pla_names:
                 if pla_first == pla_second:
@@ -1055,9 +1062,9 @@ if __name__ == "__main__":
     summary = GameResultSummary(
         elo_prior_games=1.0,
         estimate_first_player_advantage=False,
+        prior_player=("random", 0)
     )
-    summary.add_game_record(GameRecord("Alice", "Bob", win=12, loss=6, draw=0))
-    summary.add_game_record(GameRecord("Bob", "Carol", win=12, loss=6, draw=0))
-    summary.add_game_record(GameRecord("Carol", "Dan", win=36, loss=18, draw=0))
-    summary.add_game_record(GameRecord("Dan", "Eve", win=48, loss=24, draw=0))
+
+    summary.add_game_record(GameRecord("random", "model1", win=45, loss=55, draw=0))
+    summary.add_game_record(GameRecord("model1", "model2", win=40, loss=55, draw=5))
     summary.print_elos()

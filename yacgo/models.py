@@ -33,10 +33,10 @@ class Model(object):
     Basic API for model interaction.
     """
 
-    def __call__(self, inputs: TrainState) -> Tuple[np.float32, np.ndarray]:
+    def __call__(self, inputs: np.ndarray) -> Tuple[np.float32, np.ndarray]:
         self.forward(inputs)
 
-    def forward(self, inputs: TrainState) -> Tuple[np.float32, np.ndarray]:
+    def forward(self, inputs: np.ndarray) -> Tuple[np.float32, np.ndarray]:
         """Abstract class for unified forward method
 
         Args:
