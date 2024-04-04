@@ -398,6 +398,12 @@ def make_args():
         default=None,
         help="Wandb entity name. Defaults to None which will create a random group name",
     )
+    parser.add_argument(
+        "--global_step",
+        type=int,
+        default=0,
+        help="Global step, useful for resuming training and sane logging. Defaults to 0",
+    )
 
     args = parser.parse_args()
 

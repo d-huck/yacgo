@@ -297,6 +297,7 @@ class DataBroker(object):
             else 200 * args.board_size**2 * 1.1 * args.pcap_prob  # 200 games
         )
         self.max_priority = args.max_priority
+        self.highest_priority_seen = 0
         self.train_random_symmetry = args.train_random_symmetry
         self.forget_rate = args.forget_rate
         self.wandb = args.wandb
@@ -357,6 +358,9 @@ class DataBroker(object):
         for _ in range(self.batch_size):
             try:
                 data = self.replay_buffer.get(block=False)
+                self.highest_priority_seen = max(
+                    data.priority, self.highest_priority_seen
+                )
             except Empty:  # python can be so gross sometimes
                 break
 
@@ -490,6 +494,7 @@ class DataBroker(object):
             wandb.log(
                 {
                     "Replay Buffer Size": self.replay_buffer.qsize(),
+                    "Highest Priority Seen": self.highest_priority_seen,
                     "global_step": self.global_step,
                 },
                 commit=commit,
