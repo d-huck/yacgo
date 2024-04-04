@@ -169,8 +169,8 @@ def make_args():
         "--num_feature_channels",
         "-fc",
         type=int,
-        default=11,
-        help="Number of feature channels for the model",
+        default=12,
+        help="Number of feature channels for the model. Defaults to 12.",
     )
     parser.add_argument(
         "--weights_cache_dir",

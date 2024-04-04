@@ -28,6 +28,7 @@ from yacgo.go import govars, state_utils
 def init_state(size):
     # return initial board (numpy board)
     state = np.zeros((govars.NUM_CHNLS, size, size), dtype=DATA_DTYPE)
+    state[govars.BOARD_MASK] = 1
     return state
 
 
@@ -108,7 +109,7 @@ def next_state(state, action1d, canonical=False):
         state = canonical_form(state)
 
     # shift history
-    state[govars.FIRST_HIST_CHNL + 1:] = state[govars.FIRST_HIST_CHNL:-1]
+    state[govars.FIRST_HIST_CHNL + 1 :] = state[govars.FIRST_HIST_CHNL : -1]
     state[govars.FIRST_HIST_CHNL] = 0
     if not passed:
         state[govars.FIRST_HIST_CHNL][action2d] = 1
