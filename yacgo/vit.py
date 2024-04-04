@@ -40,6 +40,7 @@ from timm.models._builder import build_model_with_cfg
 from timm.models._manipulate import checkpoint_seq
 from timm.models._registry import generate_default_cfgs
 
+torch.autograd.set_detect_anomaly(True)
 
 EfficientFormer_width = {
     "L": (40, 80, 192, 384),  # 26m 83.3% 6attn
@@ -121,12 +122,13 @@ class Attention2d(torch.nn.Module):
         self.key_dim = key_dim
 
         resolution = to_2tuple(resolution)
+        orig_resolution = resolution
         if stride is not None:
             resolution = tuple([math.ceil(r / stride) for r in resolution])
             self.stride_conv = ConvNorm(
                 dim, dim, kernel_size=3, stride=stride, groups=dim
             )
-            self.upsample = nn.Upsample(scale_factor=stride, mode="bilinear")
+            self.upsample = nn.Upsample(size=orig_resolution, mode="bilinear")
         else:
             self.stride_conv = None
             self.upsample = None
@@ -182,7 +184,6 @@ class Attention2d(torch.nn.Module):
         B, C, H, W = x.shape  # pylint: disable=unused-variable
         if self.stride_conv is not None:
             x = self.stride_conv(x)
-
         q = self.q(x).reshape(B, self.num_heads, -1, self.N).permute(0, 1, 3, 2)
         k = self.k(x).reshape(B, self.num_heads, -1, self.N).permute(0, 1, 2, 3)
         v = self.v(x)
@@ -199,7 +200,6 @@ class Attention2d(torch.nn.Module):
         x = x.reshape(B, self.dh, self.resolution[0], self.resolution[1]) + v_local
         if self.upsample is not None:
             x = self.upsample(x)
-
         x = self.act(x)
         x = self.proj(x)
         return x
@@ -330,9 +330,11 @@ class Downsample(nn.Module):
     ):
         super().__init__()
 
+        padding = kernel_size - 1
         kernel_size = to_2tuple(kernel_size)
         stride = to_2tuple(stride)
         padding = to_2tuple(padding)
+        resolution = to_2tuple(resolution)
         norm_layer = norm_layer or nn.Identity()
         self.conv = ConvNorm(
             in_chs,
@@ -352,12 +354,13 @@ class Downsample(nn.Module):
             )
         else:
             self.attn = None
+        self.upsample = nn.Upsample(size=resolution, mode="bilinear")
 
     def forward(self, x):
         out = self.conv(x)
         if self.attn is not None:
             return self.attn(x) + out
-        return out
+        return self.upsample(out)
 
 
 class ConvMlpWithNorm(nn.Module):
@@ -438,7 +441,6 @@ class EfficientFormerV2Block(nn.Module):
         use_attn=True,
     ):
         super().__init__()
-
         if use_attn:
             self.token_mixer = Attention2d(
                 dim,
@@ -456,7 +458,7 @@ class EfficientFormerV2Block(nn.Module):
             self.token_mixer = None
             self.ls1 = None
             self.drop_path1 = None
-
+        # mid_conv = not use_attn
         self.mlp = ConvMlpWithNorm(
             in_features=dim,
             hidden_features=int(dim * mlp_ratio),
@@ -474,8 +476,14 @@ class EfficientFormerV2Block(nn.Module):
 
     def forward(self, x):
         if self.token_mixer is not None:
-            x = x + self.drop_path1(self.ls1(self.token_mixer(x)))
-        x = x + self.drop_path2(self.ls2(self.mlp(x)))
+            x_ = self.token_mixer(x)
+            x_ = self.ls1(x_)
+            x = x + self.drop_path1(x_)
+            # x = x + self.drop_path1(self.ls1(self.token_mixer(x)))
+        x_ = self.mlp(x)
+        x_ = self.ls2(x_)
+        x = x + self.drop_path2(x_)
+        # x = x + self.drop_path2(self.ls2(self.mlp(x)))
         return x
 
 
@@ -491,7 +499,8 @@ class Stem(nn.Sequential):
         else:
             stride1 = stride // 2
             stride2 = stride // 2 + stride % 2
-
+        padding1 = stride1 - 1
+        padding2 = stride2 - 1
         self.stride = 4
         self.conv1 = ConvNormAct(
             in_chs,
@@ -527,7 +536,7 @@ class EfficientFormerV2Stage(nn.Module):
         block_stride=None,
         downsample_use_attn=False,
         block_use_attn=False,
-        num_vit=1,
+        num_vit=4,
         mlp_ratio=4.0,
         proj_drop=0.0,
         drop_path=0.0,
@@ -539,7 +548,6 @@ class EfficientFormerV2Stage(nn.Module):
         self.grad_checkpointing = False
         mlp_ratio = to_ntuple(depth)(mlp_ratio)
         resolution = to_2tuple(resolution)
-
         if downsample:
             self.downsample = Downsample(
                 dim,
@@ -550,7 +558,7 @@ class EfficientFormerV2Stage(nn.Module):
                 act_layer=act_layer,
             )
             dim = dim_out
-            resolution = tuple([math.ceil(r / 2) for r in resolution])
+            # resolution = tuple([math.ceil(r / 2) for r in resolution])
         else:
             assert dim == dim_out
             self.downsample = nn.Identity()
@@ -572,6 +580,8 @@ class EfficientFormerV2Stage(nn.Module):
             )
             blocks += [b]
         self.blocks = nn.Sequential(*blocks)
+        self.upsample = nn.Conv2d(dim, dim_out, 1, stride=3, padding=2)
+        self.bn = nn.BatchNorm2d(dim_out)
 
     def forward(self, x):
         x = self.downsample(x)
@@ -699,15 +709,15 @@ class EfficientFormerV2(nn.Module):
         mlp_ratios = to_ntuple(num_stages)(mlp_ratios)
         stages = []
         for i in range(num_stages):
-            curr_resolution = tuple([math.ceil(s / stride) for s in img_size])
+            # curr_resolution = tuple([math.ceil(s / stride) for s in img_size])
             stage = EfficientFormerV2Stage(
                 prev_dim,
                 embed_dims[i],
                 depth=depths[i],
-                resolution=curr_resolution,
+                resolution=img_size,
                 downsample=downsamples[i],
-                # block_stride=2 if i == 2 else None,
-                downsample_use_attn=i >= 3,
+                block_stride=2 if i == 2 else None,
+                downsample_use_attn=False,  # i >= 3,
                 block_use_attn=i >= 2,
                 num_vit=num_vit,
                 mlp_ratio=mlp_ratios[i],
@@ -810,9 +820,9 @@ class EfficientFormerV2(nn.Module):
         return self.forward_head(x)
 
     def forward_state(self, state):
-        # value, policy = self(torch.from_numpy(state).float().unsqueeze(0))
-        # return value.item(), policy.squeeze().detach().numpy()
-        return np.random.random(), np.random.random(26)
+        value, policy = self(torch.from_numpy(state).float().unsqueeze(0))
+        return value.item(), policy.squeeze().detach().numpy()
+        # return np.random.random(), np.random.random(26)
 
 
 def _cfg(url="", **kwargs):

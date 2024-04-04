@@ -26,6 +26,7 @@ def random_gameplay(args):
             game_gen = GameGenerator(model, args, display=display)
             while True:
                 game_gen.sim_game()
+                game_gen.destroy()
                 del game_gen
                 gc.collect()
                 game_gen = GameGenerator(model, args, display=display)

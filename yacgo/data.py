@@ -257,11 +257,12 @@ class DataBroker(object):
         self.min_size = args.replay_buffer_min_size
         self.max_size = args.replay_buffer_size
         self.port = args.databroker_port
-        self.replay_buffer = PriorityQueue(maxsize=args.replay_buffer_size)
+        self.replay_buffer = PriorityQueue()
         self.cache_dir = args.data_cache_dir
         self.context = zmq.Context.instance()
         self.socket = self.context.socket(zmq.ROUTER)
-        self.socket.bind(f"tcp://*:{self.port}")
+        self.socket.set_hwm(100_000)
+        self.socket.bind(f"ipc:///tmp/zmq{self.port}")
 
         self.refill_buffer = args.refill_buffer
         self.batch_size = args.training_batch_size
@@ -270,9 +271,7 @@ class DataBroker(object):
             if not self.refill_buffer
             else 200 * args.board_size**2 * 1.1 * args.pcap_prob  # 200 games
         )
-        self.max_priority = (
-            self.batch_size * args.training_steps_per_epoch * HIGH_PRIORITY
-        )
+        self.max_priority = args.max_priority
         self.train_random_symmetry = args.train_random_symmetry
         self.forget_rate = args.forget_rate
         self.wandb = args.wandb
@@ -349,7 +348,7 @@ class DataBroker(object):
 
             refill = True
             if data.priority > self.max_priority:
-                refill = np.random.rand() < self.forget_rate
+                refill = np.random.rand() <= self.forget_rate
             if refill and self.refill_buffer:
                 data.priority += (
                     HIGH_PRIORITY + randint(-HIGH_PRIORITY, HIGH_PRIORITY) // 4
@@ -459,7 +458,7 @@ class DataBroker(object):
         """
         example = TrainState.unpack(message)
         data = PrioritizedTrainState.from_train_state(example)
-        self.replay_buffer.put(data)
+        self.replay_buffer.put(data, block=False)
         if self.wandb:
             wandb.log(
                 {
@@ -490,7 +489,7 @@ class DataBroker(object):
                         if batch is not None:
                             self.socket.send_multipart([address, b"", batch.pack()])
                         else:
-                            self.socket.send_multipart([address, b"", b""])
+                            self.socket.send_multipart([address, b"", b"fail"])
                     elif msg == RESET:
                         self.reset(save=True)
                         self.socket.send_multipart([address, b"", b""])
@@ -498,7 +497,7 @@ class DataBroker(object):
                         self.socket.send_multipart([address, b"", b""])
                 else:
                     self.process_data(message, commit=count % 16 == 0)
-                    # self.socket.send_multipart([address, b"", b""])
+                    # self.socket.send_multipart([address, b"", b"done"])
             except zmq.error.Again:
                 pass
             except (KeyboardInterrupt, SystemExit):
@@ -514,11 +513,11 @@ class DataGameClientMixin:
         self.data_context = zmq.Context.instance()
         self.server = args.inference_server_address
         self.port = args.databroker_port
-        self.data_socket = self.data_context.socket(zmq.DEALER)
-        self.data_socket.setsockopt(zmq.IDENTITY, self.identity)
-        self.data_socket.connect(
-            f"tcp://{args.inference_server_address}:{args.databroker_port}"
-        )
+        # self.data_socket = self.data_context.socket(zmq.REQ)
+        # self.data_socket.setsockopt(zmq.IDENTITY, self.identity)
+        # self.data_socket.connect(
+        #     f"tcp://{args.inference_server_address}:{args.databroker_port}"
+        # )
 
         def close():
             self.destroy()
@@ -527,12 +526,18 @@ class DataGameClientMixin:
 
     def deposit(self, example: TrainState):
         """Deposits a single training example into the data broker"""
-        self.data_socket.send(b"", zmq.SNDMORE)
-        self.data_socket.send(example.pack())
+        socket = self.data_context.socket(zmq.DEALER)
+        socket.setsockopt(zmq.IDENTITY, self.identity)
+        socket.connect(f"ipc:///tmp/zmq{self.port}")
+        socket.send(b"", zmq.SNDMORE)
+        socket.send(example.pack())
+        # _ = socket.recv()
+        socket.close()
+        # socket.destroy()
 
     def destroy(self):
         """Sanely shuts down the zmq client"""
-        self.data_socket.close()
+        # self.data_socket.close()
         self.data_context.term()
 
 
@@ -545,7 +550,7 @@ class DataTrainClientMixin:
         self.data_context = zmq.Context.instance()
         self.data_socket = self.data_context.socket(zmq.REQ)
         self.data_socket.setsockopt(zmq.IDENTITY, identity)
-        self.data_socket.connect(f"tcp://localhost:{args.databroker_port}")
+        self.data_socket.connect(f"ipc:///tmp/zmq{args.databroker_port}")
 
         def close():
             self.destroy()

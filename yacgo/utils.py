@@ -250,6 +250,12 @@ def make_args():
         help="Minimum size of the replay buffer before training starts",
     )
     parser.add_argument(
+        "--models_dir",
+        type=str,
+        default="models/",
+        help="Directory to store models that beat the previous best.",
+    )
+    parser.add_argument(
         "--data_cache_dir",
         type=str,
         default=".data_cache/",
@@ -364,6 +370,12 @@ def make_args():
         type=float,
         default=0.55,
         help="Percentage of games a model needs to win to become new best model. Defaults to 0.55",
+    )
+    parser.add_argument(
+        "--max_priority",
+        type=float,
+        default=1_000_000,
+        help="Maximum priority for replay buffer. Defaults to 1_000_000",
     )
 
     # Misc

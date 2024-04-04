@@ -72,7 +72,7 @@ def main():
                     target=gameplay_worker, args=(ports, i, display, args), daemon=True
                 )
             )
-            display = False
+            # display = False
         print("Starting games...")
         for i, game in enumerate(games):
             game.start()
