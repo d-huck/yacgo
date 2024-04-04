@@ -785,7 +785,10 @@ class GameResultSummary:
             f"Used a prior of {self._elo_prior_games} games worth that each player is near Elo 0."
         )
 
-    def get_elos(self) -> EloInfo:
+    def get_elos(self, recompute=False) -> EloInfo:
+        if recompute:
+            self._elo_info = self._estimate_elo()
+            return self._elo_info
         return self._compute_elos_if_needed()
 
     def get_game_results(self) -> Dict:
