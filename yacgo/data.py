@@ -81,18 +81,6 @@ class TrainState:
         self.value = value
         self.policy = policy
 
-    def pack(self) -> bytearray:
-        """Packs the TrainState into a zmq message.
-
-        Returns:
-            bytearray: message for zmq
-        """
-        s = (self.state.shape, self.state.tobytes())
-        v = (self.value.shape, self.value.tobytes())
-        p = (self.policy.shape, self.policy.tobytes())
-
-        return msgpack.packb((s, v, p))
-
     def transform(self):
         """
         Transforms the state into a standard board size, placing the current
@@ -106,7 +94,19 @@ class TrainState:
         policy_mask = np.append(self.state[govars.BOARD_MASK].ravel(), 1.0)
         _p = np.zeros_like(policy_mask)
         _p[policy_mask == 1] = self.policy
-        self.policy = _p
+        self.policy = _p.astype(DATA_DTYPE)
+
+    def pack(self) -> bytearray:
+        """Packs the TrainState into a zmq message.
+
+        Returns:
+            bytearray: message for zmq
+        """
+        s = (self.state.shape, self.state.tobytes())
+        v = (self.value.shape, self.value.tobytes())
+        p = (self.policy.shape, self.policy.tobytes())
+
+        return msgpack.packb((s, v, p))
 
     @classmethod
     def unpack(cls, message: bytearray) -> "TrainState":
@@ -288,7 +288,7 @@ class DataBroker(object):
         self.socket = self.context.socket(zmq.ROUTER)
         self.socket.set_hwm(100_000)
         self.socket.bind(f"ipc:///tmp/zmq{self.port}")
-
+        self.global_step = args.global_step
         self.refill_buffer = args.refill_buffer
         self.batch_size = args.training_batch_size
         self.min_size = (
@@ -385,6 +385,7 @@ class DataBroker(object):
         values = np.stack(values)
         policies = np.stack(policies)
         batch = TrainingBatch(count, states, values, policies)
+        self.global_step += 1
         return batch
 
     def load_from_disk(self):
@@ -488,6 +489,7 @@ class DataBroker(object):
             wandb.log(
                 {
                     "Replay Buffer Size": self.replay_buffer.qsize(),
+                    "global_step": self.global_step,
                 },
                 commit=commit,
             )

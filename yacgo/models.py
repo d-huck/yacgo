@@ -356,6 +356,7 @@ class Trainer(ViTWrapper, DataTrainClientMixin):
         self.regressor = torch.nn.MSELoss()
         self.training_steps = args.training_steps_per_epoch
         self.wandb = args.wandb
+        self.global_step = args.global_step
         self.model.train()
 
     def train_step(self, states: np.ndarray, policies: np.ndarray, values: np.ndarray):
@@ -397,7 +398,10 @@ class Trainer(ViTWrapper, DataTrainClientMixin):
         loss.backward()
         self.optimizer.step()
         if self.wandb:
-            wandb.log({"Loss": loss.detach().cpu().item()})
+            wandb.log(
+                {"Loss": loss.detach().cpu().item(), "global_step": self.global_step}
+            )
+        self.global_step += 1
         return loss.detach().cpu().item()
 
     def run(self, epoch: int = 0):
