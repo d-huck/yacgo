@@ -35,6 +35,7 @@ def test_TrainState():
         _policy = np.zeros_like(s.policy)
         _policy = s.policy[board_mask == 1]
         assert np.array_equal(_policy, policy), "Policy not preserved."
+        s.pack()
 
 
 def main():

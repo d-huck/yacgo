@@ -408,7 +408,7 @@ class DataBroker(object):
                     states = data["states"]
                     values = data["values"]
                     policies = data["policies"]
-                except Exception:  # pylint
+                except Exception:  # pylint disable=broad-exception-caught
                     os.remove(fp)
                     continue
                 if "priorities" in data:
@@ -468,6 +468,7 @@ class DataBroker(object):
             )
 
     def reset(self, save=False):
+        """Resets the data queue by optionally dumping the desk and clearing the queue"""
         if save:
             self.dump_to_disk()
         self.replay_buffer = PriorityQueue()
