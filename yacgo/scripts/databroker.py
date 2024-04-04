@@ -1,7 +1,10 @@
+""""""
+
 import atexit
 import time
 from yacgo.data import DataBroker
 from yacgo.utils import make_args
+import wandb
 
 
 @atexit.register
@@ -18,8 +21,18 @@ def main():
     Main Process
     """
     args = make_args()
+    if args.wandb:
+        wandb.init(
+            project=args.wandb_project,
+            group=args.wandb_group,
+            job_type="replay_buffer",
+            config=args,
+        )
     databroker = DataBroker(args)
-    databroker.run()
+    try:
+        databroker.run()
+    except KeyboardInterrupt:
+        print("Dumping to disk and exiting...")
 
 
 if __name__ == "__main__":
