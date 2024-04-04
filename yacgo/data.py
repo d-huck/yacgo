@@ -27,13 +27,16 @@ from typing import Union
 import msgpack
 import numpy as np
 import torch
+from torchvision.transforms import RandomCrop
 import zmq
+from yacgo.go import govars
 
 import wandb
 
 DEPOSIT = 0
 GET_BATCH = 0
 RESET = 1
+FULL_BOARD = 19
 
 HIGH_PRIORITY = 1000
 TRAINING_BATCH = 1
@@ -44,12 +47,19 @@ TORCH_DTYPE = torch.float32
 
 logger = logging.getLogger(__name__)
 
+transform = RandomCrop(FULL_BOARD, padding=0, pad_if_needed=True)
+
 
 @dataclass  # Still use data class to get the extra __repr__ and __eq__ methods for free
 class TrainState:
     """Dataclass for a single training example. Contains a state, value, and policy."""
 
-    def __init__(self, state: np.ndarray, value: np.float32, policy: np.ndarray):
+    def __init__(
+        self,
+        state: np.ndarray,
+        value: np.float32,
+        policy: np.ndarray,
+    ):
         if isinstance(value, (int, float)):
             value = DATA_DTYPE(value)
         elif isinstance(value, list):
@@ -70,6 +80,21 @@ class TrainState:
         self.state = state
         self.value = value
         self.policy = policy
+
+    def transform(self):
+        """
+        Transforms the state into a standard board size, placing the current
+        board at a random location within the full board.
+        """
+        self.state = transform(torch.tensor(self.state)).numpy()
+        assert (
+            self.state.dtype == DATA_DTYPE
+        ), "State must be of type np.float32 after transform"
+
+        policy_mask = np.append(self.state[govars.BOARD_MASK].ravel(), 1.0)
+        _p = np.zeros_like(policy_mask)
+        _p[policy_mask == 1] = self.policy
+        self.policy = _p.astype(DATA_DTYPE)
 
     def pack(self) -> bytearray:
         """Packs the TrainState into a zmq message.
@@ -263,7 +288,7 @@ class DataBroker(object):
         self.socket = self.context.socket(zmq.ROUTER)
         self.socket.set_hwm(100_000)
         self.socket.bind(f"ipc:///tmp/zmq{self.port}")
-
+        self.global_step = args.global_step
         self.refill_buffer = args.refill_buffer
         self.batch_size = args.training_batch_size
         self.min_size = (
@@ -272,6 +297,7 @@ class DataBroker(object):
             else 200 * args.board_size**2 * 1.1 * args.pcap_prob  # 200 games
         )
         self.max_priority = args.max_priority
+        self.highest_priority_seen = 0
         self.train_random_symmetry = args.train_random_symmetry
         self.forget_rate = args.forget_rate
         self.wandb = args.wandb
@@ -332,6 +358,9 @@ class DataBroker(object):
         for _ in range(self.batch_size):
             try:
                 data = self.replay_buffer.get(block=False)
+                self.highest_priority_seen = max(
+                    data.priority, self.highest_priority_seen
+                )
             except Empty:  # python can be so gross sometimes
                 break
 
@@ -360,6 +389,7 @@ class DataBroker(object):
         values = np.stack(values)
         policies = np.stack(policies)
         batch = TrainingBatch(count, states, values, policies)
+        self.global_step += 1
         return batch
 
     def load_from_disk(self):
@@ -382,7 +412,7 @@ class DataBroker(object):
                     states = data["states"]
                     values = data["values"]
                     policies = data["policies"]
-                except Exception:  # pylint
+                except Exception:  # pylint disable=broad-exception-caught
                     os.remove(fp)
                     continue
                 if "priorities" in data:
@@ -442,6 +472,7 @@ class DataBroker(object):
             )
 
     def reset(self, save=False):
+        """Resets the data queue by optionally dumping the desk and clearing the queue"""
         if save:
             self.dump_to_disk()
         self.replay_buffer = PriorityQueue()
@@ -463,6 +494,8 @@ class DataBroker(object):
             wandb.log(
                 {
                     "Replay Buffer Size": self.replay_buffer.qsize(),
+                    "Highest Priority Seen": self.highest_priority_seen,
+                    "global_step": self.global_step,
                 },
                 commit=commit,
             )
