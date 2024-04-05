@@ -23,7 +23,6 @@ from yacgo.data import (
     DataTrainClientMixin,
     Inference,
     State,
-    TrainState,
 )
 from yacgo.go import game, govars
 from yacgo.vit import (
@@ -304,8 +303,8 @@ class InferenceServer(ViTWrapper):
             (
                 self.batch_size,
                 self.n_chans,
-                self.board_size,
-                self.board_size,
+                FULL_BOARD,
+                FULL_BOARD,
             )
         )
 
