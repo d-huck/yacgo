@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from queue import Empty, PriorityQueue
 from random import randint
 from typing import Union
-
+import time
 import msgpack
 import numpy as np
 import torch
@@ -36,7 +36,7 @@ import wandb
 DEPOSIT = 0
 GET_BATCH = 0
 RESET = 1
-FULL_BOARD = 19
+FULL_BOARD = 9
 
 HIGH_PRIORITY = 1000
 TRAINING_BATCH = 1
@@ -301,6 +301,7 @@ class DataBroker(object):
         self.train_random_symmetry = args.train_random_symmetry
         self.forget_rate = args.forget_rate
         self.wandb = args.wandb
+        self.last_log = 0
 
         if self.cache_dir is not None:
             self.load_from_disk()
@@ -422,13 +423,6 @@ class DataBroker(object):
                 for s, v, p, p_ in zip(states, values, policies, priorities):
                     self.replay_buffer.put(PrioritizedTrainState(p_, s, v, p))
                 os.remove(fp)
-        if self.wandb:
-            wandb.log(
-                {
-                    "Replay Buffer Size": self.replay_buffer.qsize(),
-                },
-                commit=True,
-            )
 
     def dump_to_disk(self):
         """
@@ -477,7 +471,7 @@ class DataBroker(object):
             self.dump_to_disk()
         self.replay_buffer = PriorityQueue()
 
-    def process_data(self, message, commit=True):
+    def process_data(self, message):
         """
         Unpacks data from a message and places it in the replay buffer
 
@@ -490,15 +484,6 @@ class DataBroker(object):
         example = TrainState.unpack(message)
         data = PrioritizedTrainState.from_train_state(example)
         self.replay_buffer.put(data, block=False)
-        if self.wandb:
-            wandb.log(
-                {
-                    "Replay Buffer Size": self.replay_buffer.qsize(),
-                    "Highest Priority Seen": self.highest_priority_seen,
-                    "global_step": self.global_step,
-                },
-                commit=commit,
-            )
 
     def run(self):
         """
@@ -529,13 +514,22 @@ class DataBroker(object):
                     else:
                         self.socket.send_multipart([address, b"", b""])
                 else:
-                    self.process_data(message, commit=count % 16 == 0)
+                    self.process_data(message)
                     # self.socket.send_multipart([address, b"", b"done"])
             except zmq.error.Again:
                 pass
             except (KeyboardInterrupt, SystemExit):
                 self.running = False
             count += 1
+            if self.wandb and time.time() - self.last_log > 10:
+                wandb.log(
+                    {
+                        "Replay Buffer Size": self.replay_buffer.qsize(),
+                        "Highest Priority Seen": self.highest_priority_seen,
+                        "global_step": self.global_step,
+                    },
+                    commit=True,
+                )
 
 
 class DataGameClientMixin:
