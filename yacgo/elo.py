@@ -874,7 +874,11 @@ class GameResultSummary:
         )
         data = []
         if self.prior_player is not None:
-            data.extend(make_single_player_prior(self.prior_player[0], 1e10, self.prior_player[1]))
+            data.extend(
+                make_single_player_prior(
+                    self.prior_player[0], 1e10, self.prior_player[1]
+                )
+            )
         for pla_first in pla_names:
             for pla_second in pla_names:
                 if pla_first == pla_second:
@@ -912,7 +916,7 @@ class GameResultSummary:
                 )
             )
 
-        info = compute_elos(data, verbose=True)
+        info = compute_elos(data, verbose=False)
         return info
 
     def _print_matrix(self, pla_names, results_matrix):
@@ -1062,9 +1066,21 @@ if __name__ == "__main__":
     summary = GameResultSummary(
         elo_prior_games=1.0,
         estimate_first_player_advantage=False,
-        prior_player=("random", 0)
+        prior_player=("random", 0),
     )
 
-    summary.add_game_record(GameRecord("random", "model1", win=45, loss=55, draw=0))
-    summary.add_game_record(GameRecord("model1", "model2", win=40, loss=55, draw=5))
-    summary.print_elos()
+    summary.add_game_record(GameRecord("model1", "random", win=136, loss=64, draw=0))
+    # summary.add_game_record(GameRecord("model1", "model2", win=40, loss=55, draw=5))
+    # summary.add_game_record(GameRecord("random", "model2", win=32, loss=68, draw=0))
+    # summary.add_game_record(GameRecord("model3", "model2", win=64, loss=36, draw=0))
+    # summary.print_elos()
+    print("round 1")
+    elos = summary.get_elos()
+    print(elos)
+
+    summary.add_game_record(GameRecord("model3", "model1", win=68, loss=32, draw=0))
+    summary.add_game_record(GameRecord("model3", "random", win=74, loss=26, draw=0))
+    print("round 2", "")
+    # print("round 2.1")
+    elos = summary.get_elos(recompute=True)
+    print(elos)

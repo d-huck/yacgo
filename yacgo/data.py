@@ -378,7 +378,7 @@ class DataBroker(object):
 
             refill = True
             if data.priority > self.max_priority:
-                refill = np.random.rand() <= self.forget_rate
+                refill = np.random.rand() >= self.forget_rate
             if refill and self.refill_buffer:
                 data.priority += (
                     HIGH_PRIORITY + randint(-HIGH_PRIORITY, HIGH_PRIORITY) // 4
@@ -422,7 +422,7 @@ class DataBroker(object):
                     priorities = list(np.random.randint(0, HIGH_PRIORITY, len(states)))
                 for s, v, p, p_ in zip(states, values, policies, priorities):
                     self.replay_buffer.put(PrioritizedTrainState(p_, s, v, p))
-                os.remove(fp)
+                # os.remove(fp)
 
     def dump_to_disk(self):
         """
@@ -438,6 +438,9 @@ class DataBroker(object):
 
         bs = 512
         os.makedirs(self.cache_dir, exist_ok=True)
+        for file in os.listdir(self.cache_dir):
+            os.remove(os.path.join(self.cache_dir, file))
+
         batch = {"states": [], "values": [], "policies": [], "priorities": []}
         while not self.replay_buffer.empty():
             data = self.replay_buffer.get()

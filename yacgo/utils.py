@@ -308,9 +308,15 @@ def make_args():
         help="Komi for Go game. Defaults to 0.5 to avoid draws, giving white slight advantage",
     )
     parser.add_argument(
+        "--starting_elo",
+        type=float,
+        default=0.0,
+        help="Starting elo for model. Defaults to 0.0",
+    )
+    parser.add_argument(
         "--n_simulations",
         type=int,
-        default=400,
+        default=600,
         help="Number of simulations for MCTS for gameplay. Defaults to 400",
     )
     parser.add_argument(
@@ -319,7 +325,7 @@ def make_args():
         default=None,
         help=(
             "Number of simulations for MCTS during data generation. defaults "
-            "to n_simulations (400) if not provided."
+            "to n_simulations (600) if not provided."
         ),
     )
     parser.add_argument(
@@ -440,4 +446,7 @@ def model_name_to_epoch(model: str) -> int:
     Returns:
         int: integer representation of the string number
     """
-    return int(model.split("-")[-1][:-4].lstrip("0"))
+    epoch_str = model.split("-")[-1][:-4].lstrip("0")
+    if epoch_str == "":
+        return 0
+    return int(epoch_str)
