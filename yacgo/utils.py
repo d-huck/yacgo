@@ -166,6 +166,18 @@ def make_args():
         ),
     )
     parser.add_argument(
+        "--game_records",
+        type=str,
+        default="game_records.csv",
+        help="File to store game records. Fails silently if does not exist",
+    )
+    parser.add_argument(
+        "--competition_epochs",
+        type=int,
+        default=5,
+        help="Number of epochs between competitions. Defaults to 5",
+    )
+    parser.add_argument(
         "--num_feature_channels",
         "-fc",
         type=int,
@@ -288,6 +300,11 @@ def make_args():
         "--num_games", type=int, default=8, help="Number of games to play"
     )
     parser.add_argument(
+        "--top_k",
+        type=int,
+        default=3,
+    )
+    parser.add_argument(
         "--num_game_processes",
         type=int,
         default=16,
@@ -298,7 +315,7 @@ def make_args():
     parser.add_argument(
         "--num_comp_games",
         type=int,
-        default=400,
+        default=32,
         help="Number of games to play for competition",
     )
     parser.add_argument(

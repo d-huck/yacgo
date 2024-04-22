@@ -21,7 +21,7 @@ BW_GAME = 0
 WB_GAME = 1
 
 # hard set workers to minimum for running 400 games (max) at once
-COMP_WORKERS = 32
+COMP_WORKERS = 50
 COMP_THREADS = 4
 
 
@@ -100,7 +100,12 @@ class ModelCompetition:
         self.komi = args.komi
         self.args = args
         self.pbar = tqdm(
-            total=1, unit="game", postfix={"score": 0.0}, smoothing=0.001, leave=False
+            total=1,
+            unit="game",
+            postfix={"score": 0.0},
+            smoothing=0.001,
+            leave=False,
+            position=1,
         )
         self.lock = Lock()
         self.n_workers = args.num_game_processes

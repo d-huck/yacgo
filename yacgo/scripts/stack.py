@@ -3,26 +3,28 @@ Runs the entire yacgo stack: 1 Trainer, 1 DataBroker, n InferenceServers, k Game
 """
 
 import atexit
-from datetime import datetime as dt
 import multiprocessing as mp
 import os
-from typing import List
 import signal
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime as dt
+from itertools import combinations
 from multiprocessing import Process
+from typing import List
 
 import randomname
+from tqdm.auto import tqdm
 
 import wandb
 from yacgo.data import DataBroker
-from yacgo.eval import ModelCompetition, CompetitionResult
 from yacgo.elo import GameRecord, GameResultSummary
+from yacgo.eval import CompetitionResult, ModelCompetition
 from yacgo.models import InferenceClient, InferenceServer, Trainer
 from yacgo.train_utils import GameGenerator
 from yacgo.utils import make_args, model_name_to_epoch
 
-BEST_MODEL_PORT = 31337
-CANDIDATE_PORT = 31338
+MODEL_1_PORT = 31337
+MODEL_2_PORT = 31338
 
 
 def inference_worker(port, args, model):
@@ -83,8 +85,8 @@ def gameplay_worker(ports, display, args):
 
 
 def competition_worker(
-    model: str, best_model: str = None, args: dict = None
-) -> CompetitionResult:
+    models: list, summary: GameResultSummary, args: dict = None
+) -> GameResultSummary:
     """Wrapper around a simple competition worker.
 
     Args:
@@ -93,9 +95,7 @@ def competition_worker(
     """
     # run the competition
     servers = []
-
-    if best_model == "random":
-        best_model = None
+    records = []
 
     def close():
         for server in servers:
@@ -105,40 +105,66 @@ def competition_worker(
 
     atexit.register(close)
 
-    if best_model is not None:
-        servers = [
-            Process(
-                target=inference_worker,
-                args=(CANDIDATE_PORT, args, model),
-                daemon=True,
-            ),
-            Process(
-                target=inference_worker,
-                args=(BEST_MODEL_PORT, args, best_model),
-                daemon=True,
-            ),
-        ]
-    else:
-        servers = [
-            Process(
-                target=inference_worker,
-                args=(CANDIDATE_PORT, args, model),
-                daemon=True,
-            ),
-        ]
-    for server in servers:
-        server.start()
-    if best_model is not None:
-        comp = ModelCompetition(CANDIDATE_PORT, BEST_MODEL_PORT, args)
-    else:
-        comp = ModelCompetition(CANDIDATE_PORT, None, args)
-    result = comp.compete(num_games=args.num_comp_games)
+    for model1, model2 in tqdm(
+        combinations(models, 2),
+        position=0,
+        leave=False,
+        total=len(models) * (len(models) - 1) // 2,
+    ):
+        if model1 == "random":
+            model1 = None
+        elif model2 == "random":
+            model2 = None
 
-    for server in servers:
-        server.terminate()
-        server.join()
+        servers = []
+        if model1 is not None:
+            servers.append(
+                Process(
+                    target=inference_worker,
+                    args=(MODEL_1_PORT, args, model1),
+                    daemon=True,
+                )
+            )
+        if model2 is not None:
+            servers.append(
+                Process(
+                    target=inference_worker,
+                    args=(MODEL_2_PORT, args, model2),
+                    daemon=True,
+                )
+            )
 
-    return result
+        for server in servers:
+            server.start()
+
+        p1 = MODEL_1_PORT if model1 is not None else None
+        p2 = MODEL_2_PORT if model2 is not None else None
+        comp = ModelCompetition(p1, p2, args)
+
+        result = comp.compete(num_games=args.num_comp_games)
+        win, loss = result.wins_losses
+        draw = args.num_comp_games - win - loss
+
+        if model1 is None:
+            model1 = "random"
+        if model2 is None:
+            model2 = "random"
+        game_record = GameRecord(model1, model2, win=win, loss=loss, draw=draw)
+        summary.add_game_record(game_record)
+
+        for server in servers:
+            server.terminate()
+            server.join()
+
+    elos = summary.get_elos(recompute=True)
+
+    # print("Competition Results")
+    # print("=" * 80)
+    # summary.print_game_results()
+    # print("-" * 80)
+    # print(elos, "\n")
+
+    return summary
 
 
 def trainer_worker(ports, args):
@@ -149,42 +175,47 @@ def trainer_worker(ports, args):
     """
 
     trainer = Trainer(args)
-    model = None
-    best_model = args.model_path
-    models = []
-    if args.epoch == 0 and best_model is not None:
-        epoch = model_name_to_epoch(best_model) + 1
-        best_model_name = f"model-{dt.now().strftime('%Y%m%d-%H%M%S')}-{epoch - 1:03d}"
-        models.append((best_model_name, best_model))
-    else:
-        epoch = 0
-        best_model_name = "random"
-    epoch = max(args.epoch, epoch)
+    # model = None
+    # best_model = args.model_path
+    # models = []
+    # if args.epoch == 0 and best_model is not None:
+    #     epoch = model_name_to_epoch(best_model) + 1
+    #     best_model_name = f"model-{dt.now().strftime('%Y%m%d-%H%M%S')}-{epoch - 1:03d}"
+    #     models.append((best_model_name, best_model))
+    # else:
+    #     epoch = 0
+    #     best_model_name = "random"
+    # epoch = max(args.epoch, epoch)
 
-    # Do an initial competition if no history. TODO: create a saveable history
-    if best_model is not None and args.starting_elo == 0.0:
+    if os.path.exists(args.game_records):
+        summary = GameResultSummary.from_csv(args.game_records)
+        elos = summary.get_elos(recompute=True)
+        print("Found Game Records! Current ELOs:")
+        print(elos)
+        models = elos.get_players()[: args.top_k]
+    else:
         summary = GameResultSummary(
-            elo_prior_games=1.0,
+            elo_prior_games=1000.0,
             estimate_first_player_advantage=False,
             prior_player=("random", 0),
         )
-        print("Performing initial competitions to determine starting ELO")
+        models = ["random"]
 
-        result = competition_worker(best_model, None, args)
-        win, loss = result.wins_losses
-        draw = args.num_comp_games - win - loss
-        summary.add_game_record(
-            GameRecord(best_model_name, "random", win=win, loss=loss, draw=draw)
-        )
-        elos = summary.get_elos(recompute=True)
+    servers = []
 
-        args.starting_elo = elos.get_elo(best_model_name)
-    else:
-        summary = GameResultSummary(
-            elo_prior_games=1.0,
-            estimate_first_player_advantage=False,
-            prior_player=(best_model_name, args.starting_elo),
-        )
+    def close():
+        summary.to_csv(args.game_records)
+        for server in servers:
+            if server is not None:
+                server.terminate()
+                server.join()
+
+    atexit.register(close)
+
+    best_model = models[0]
+    if best_model != "random":
+        trainer.load_pretrained(best_model)
+        epoch = model_name_to_epoch(best_model) + 1
 
     wandb.log(
         {
@@ -193,74 +224,70 @@ def trainer_worker(ports, args):
         }
     )
     print("Starting training loop...")
-    servers = []
 
-    def close():
-        for server in servers:
-            if server is not None:
+    while True:
+        # models = ["random"]
+        for _ in range(args.competition_epochs):
+            for port in ports:
+                servers.append(
+                    Process(
+                        target=inference_worker,
+                        args=(port, args, best_model),
+                        daemon=True,
+                    )
+                )
+
+            for server in servers:
+                server.start()
+
+            # run a training run and save the model
+            trainer.run(epoch)
+            model = trainer.save_pretrained(epoch=epoch, path=args.models_dir)
+
+            for server in servers:
                 server.terminate()
                 server.join()
 
-    atexit.register(close)
+            # model_name = f"model-{dt.now().strftime('%Y%m%d-%H%M%S')}-{epoch:03d}"
+            models.append(model)
+            servers = []  # gc the old servers
+            epoch += 1
 
-    while True:
-        for port in ports:
-            servers.append(
-                Process(
-                    target=inference_worker,
-                    args=(port, args, model),
-                    daemon=True,
-                )
-            )
-
-        for server in servers:
-            server.start()
-
-        # run a training run and save the model
-        trainer.run(epoch)
-        candidate = trainer.save_pretrained(candidate=True, path=args.models_dir)
-
-        for server in servers:
-            server.terminate()
-            server.join()
-        model_name = f"model-{dt.now().strftime('%Y%m%d-%H%M%S')}-{epoch:03d}"
-        servers = []  # gc the old servers
-
-        result = competition_worker(candidate, best_model, args)
-
-        win, loss = result.wins_losses
-        draw = args.num_comp_games - win - loss
-
-        summary.add_game_record(
-            GameRecord(model_name, best_model_name, win=win, loss=loss, draw=draw)
-        )
-
+        summary = competition_worker(models, summary, args)
         elos = summary.get_elos(recompute=True)
-        print("Raw result", result.probs)
+
+        # win, loss = result.wins_losses
+        # draw = args.num_comp_games - win - loss
+
+        # elos = summary.get_elos(recompute=True)
         print("Competition Results")
         print("=" * 80)
         summary.print_game_results()
         print("-" * 80)
         print(elos, "\n")
 
+        models = elos.get_players()[: args.top_k]
+        best_model = models[0]
+        if best_model != "random":
+            trainer.load_pretrained(best_model)
+
         if args.wandb:
             wandb.log(
                 {
-                    "score": result.score,
-                    "elo": elos.get_elo(model_name),
-                    "new_model_win%": result.probs[0],
+                    # "score": result.score,
+                    "elo": elos.get_elo(models[0]),
+                    # "new_model_win%": result.probs[0],
                     "epoch": epoch,
                     "global_step": trainer.global_step,
                 }
             )
-        if os.path.exists(candidate):
-            os.remove(candidate)
+        # if os.path.exists(candidate):
+        #     os.remove(candidate)
 
-        model = trainer.save_pretrained(epoch=epoch)
-        if result.probs[0] >= args.acceptance_ratio:
-            best_model = model
-            best_model_name = model_name
-        epoch += 1
+        # model = trainer.save_pretrained(epoch=epoch)
+        # if result.probs[0] >= args.acceptance_ratio:
+        #     best_model = model
+        #     best_model_name = model_name
 
 
 def main():

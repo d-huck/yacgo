@@ -8,22 +8,17 @@ import atexit
 import os
 import random
 import time
+from datetime import datetime as dt
 from typing import Tuple
 
 import numpy as np
 import torch
-from torchvision.transforms import RandomCrop
-import wandb
 import zmq
+from torchvision.transforms import RandomCrop
 from tqdm.auto import tqdm
 
-from yacgo.data import (
-    DATA_DTYPE,
-    FULL_BOARD,
-    DataTrainClientMixin,
-    Inference,
-    State,
-)
+import wandb
+from yacgo.data import DATA_DTYPE, FULL_BOARD, DataTrainClientMixin, Inference, State
 from yacgo.go import game, govars
 from yacgo.vit import (
     EfficientFormer_depth,
@@ -85,6 +80,7 @@ class ViTWrapper(object):
         elif args.model_path is not None:
             self.load_pretrained(args.model_path)
         self.board_size = FULL_BOARD
+        self.play_size = args.board_size
         self.n_chans = args.num_feature_channels
 
     def __repr__(self):
@@ -126,7 +122,7 @@ class ViTWrapper(object):
         if candidate:
             model_name = "candidate_model.pth"
         else:
-            model_name = f"{self.model_size}-bs{self.board_size}-nc{self.n_chans}-epoch-{epoch:03d}.pth"
+            model_name = f"{self.model_size}-bs{self.play_size}-nc{self.n_chans}-{dt.now().strftime('%d-%H%M%S')}-{epoch:03d}.pth"
         out = os.path.join(path, model_name)
         torch.save(self.model.state_dict(), out)
 

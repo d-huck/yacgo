@@ -803,11 +803,13 @@ class GameResultSummary:
         return self.results
 
     def to_csv(self, file: str = "game_records.csv") -> None:
-        fieldnames = ["player2", "player1", "win", "loss", "draw"]
+        fieldnames = ["player2", "player1", "win", "loss", "draw", "player1_elo"]
+        _elos = self.get_elos(recompute=True)
         with open(file, "w") as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
             for players, record in self.results.items():
+                player_1_elo = _elos.get_elo(players[0])
                 writer.writerow(
                     {
                         "player1": record.player1,
@@ -815,6 +817,7 @@ class GameResultSummary:
                         "win": record.win,
                         "loss": record.loss,
                         "draw": record.draw,
+                        "player1_elo": player_1_elo,
                     }
                 )
 
@@ -1110,13 +1113,9 @@ if __name__ == "__main__":
     summary.add_game_record(GameRecord("model1", "model2", win=40, loss=55, draw=5))
     summary.add_game_record(GameRecord("random", "model2", win=32, loss=68, draw=0))
     summary.add_game_record(GameRecord("model3", "model2", win=64, loss=36, draw=0))
-    summary.print_elos()
+    summary.add_game_record(GameRecord("model3", "model1", win=60, loss=10, draw=0))
+    # summary.print_elos()
     print("round 1")
     elos = summary.get_elos()
     print(elos)
-
-    summary.to_csv("game_records.csv")
-
-    new_sum = GameResultSummary.from_csv("game_records.csv")
-    elos = new_sum.get_elos(recompute=True)
-    print(elos)
+    print(elos.get_players()[0])
