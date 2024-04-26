@@ -215,6 +215,7 @@ def trainer_worker(ports, args):
         best_model = models[0]
     else:
         best_model = args.model_path
+
     if best_model != "random":
         trainer.load_pretrained(best_model)
         epoch = model_name_to_epoch(best_model) + 1
