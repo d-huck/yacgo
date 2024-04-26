@@ -824,7 +824,7 @@ class GameResultSummary:
     @classmethod
     def from_csv(cls, file: str = "game_records.csv") -> "GameResultSummary":
         _sum = cls(
-            elo_prior_games=1000.0,
+            elo_prior_games=32.0,
             estimate_first_player_advantage=False,
             prior_player=("random", 0),
         )
