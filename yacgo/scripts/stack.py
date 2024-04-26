@@ -195,7 +195,7 @@ def trainer_worker(ports, args):
         models = elos.get_players()[: args.top_k]
     else:
         summary = GameResultSummary(
-            elo_prior_games=1000.0,
+            elo_prior_games=32.0,
             estimate_first_player_advantage=False,
             prior_player=("random", 0),
         )
@@ -216,6 +216,8 @@ def trainer_worker(ports, args):
     if best_model != "random":
         trainer.load_pretrained(best_model)
         epoch = model_name_to_epoch(best_model) + 1
+    else:
+        epoch = 0
 
     wandb.log(
         {

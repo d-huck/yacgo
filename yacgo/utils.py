@@ -333,8 +333,8 @@ def make_args():
     parser.add_argument(
         "--n_simulations",
         type=int,
-        default=600,
-        help="Number of simulations for MCTS for gameplay. Defaults to 400",
+        default=1200,
+        help="Number of simulations for MCTS for gameplay. Defaults to 1200",
     )
     parser.add_argument(
         "--pcap_train",
