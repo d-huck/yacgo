@@ -157,8 +157,8 @@ class InferenceLocal(ViTWrapper, Model):
     the bot or simple testing.
     """
 
-    def __init__(self, args: dict):
-        super().__init__(args)
+    def __init__(self, args: dict, model_path=None):
+        super().__init__(args, model_path=model_path)
         self.model.eval()
         self.n_chans = args.num_feature_channels
         self.board_size = args.board_size
