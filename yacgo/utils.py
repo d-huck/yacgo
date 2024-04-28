@@ -404,9 +404,8 @@ def make_args():
     # Misc
     parser.add_argument(
         "--wandb",
-        type=bool,
-        default=True,
-        help="Whether to log training to wandb. Defaults to True",
+        action="store_true",
+        help="Enable logging to wandb for analysis.",
     )
 
     parser.add_argument(
