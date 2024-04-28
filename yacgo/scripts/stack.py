@@ -221,13 +221,13 @@ def trainer_worker(ports, args):
         epoch = model_name_to_epoch(best_model) + 1
     else:
         epoch = 0
-
-    wandb.log(
-        {
-            "global_step": trainer.global_step,
-            "elo": args.starting_elo,
-        }
-    )
+    if args.wandb:
+        wandb.log(
+            {
+                "global_step": trainer.global_step,
+                "elo": args.starting_elo,
+            }
+        )
     print("Starting training loop...")
 
     while True:
