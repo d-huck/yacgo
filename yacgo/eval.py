@@ -13,7 +13,7 @@ from tqdm.auto import tqdm
 
 from yacgo.game import Game
 from yacgo.go import govars
-from yacgo.models import InferenceClient, InferenceRandom
+from yacgo.models import InferenceClient, InferenceRandom, InferenceLocal
 from yacgo.player import MCTSPlayer, RandomPlayer
 
 # mp.set_start_method("fork")
@@ -21,8 +21,8 @@ BW_GAME = 0
 WB_GAME = 1
 
 # hard set workers to minimum for running 400 games (max) at once
-COMP_WORKERS = 50
-COMP_THREADS = 4
+COMP_WORKERS = 4
+COMP_THREADS = 8
 
 
 def play_game(game_args):
@@ -44,14 +44,20 @@ def play_game(game_args):
         if model1 is None:
             model = InferenceRandom(args)
             p1 = MCTSPlayer(govars.BLACK, model, args)
-        else:
+        elif isinstance(model1, int):
             model = InferenceClient([model1])
+            p1 = MCTSPlayer(govars.BLACK, model, args)
+        elif isinstance(model1, str):
+            model = InferenceLocal(args, model1)
             p1 = MCTSPlayer(govars.BLACK, model, args)
         if model2 is None:
             model = InferenceRandom(args)
             p2 = MCTSPlayer(govars.WHITE, model, args)
-        else:
+        elif isinstance(model2, int):
             model = InferenceClient([model2])
+            p2 = MCTSPlayer(govars.WHITE, model, args)
+        elif isinstance(model2, str):
+            model = InferenceLocal(args, model2, model_path=model2)
             p2 = MCTSPlayer(govars.WHITE, model, args)
         done = False
         while not done:
