@@ -204,7 +204,7 @@ def make_args():
     parser.add_argument(
         "--inference_batch_size",
         type=int,
-        default=128,
+        default=64,
         help=(
             "Max batch size for inference. Due to multiple servers being used,"
             "actual batch size will usually be lower to minimize time a game is "
@@ -297,7 +297,7 @@ def make_args():
 
     # Game / MCTS Settings
     parser.add_argument(
-        "--num_games", type=int, default=8, help="Number of games to play"
+        "--num_games", type=int, default=16, help="Number of games to play"
     )
     parser.add_argument(
         "--top_k",
@@ -307,7 +307,7 @@ def make_args():
     parser.add_argument(
         "--num_game_processes",
         type=int,
-        default=16,
+        default=4,
         help=(
             "Number of game processes. Each process will run num_games // num_processes threads "
         ),
