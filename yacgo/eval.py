@@ -13,7 +13,7 @@ from tqdm.auto import tqdm
 
 from yacgo.game import Game
 from yacgo.go import govars
-from yacgo.models import InferenceClient
+from yacgo.models import InferenceClient, InferenceRandom, InferenceLocal
 from yacgo.player import MCTSPlayer, RandomPlayer
 
 # mp.set_start_method("fork")
@@ -21,16 +21,8 @@ BW_GAME = 0
 WB_GAME = 1
 
 # hard set workers to minimum for running 400 games (max) at once
-COMP_WORKERS = 50
+COMP_WORKERS = 4
 COMP_THREADS = 8
-
-
-def play_game_worker(game_args):
-    results = []
-    with ThreadPoolExecutor(max_workers=COMP_THREADS) as ex:
-        for result in ex.map(play_game, game_args):
-            results.append(result)
-    return results
 
 
 def play_game(game_args):
@@ -50,14 +42,22 @@ def play_game(game_args):
         model1, model2, args, komi, order = game_args
 
         if model1 is None:
-            p1 = RandomPlayer(govars.BLACK)
-        else:
+            model = InferenceRandom(args)
+            p1 = MCTSPlayer(govars.BLACK, model, args)
+        elif isinstance(model1, int):
             model = InferenceClient([model1])
             p1 = MCTSPlayer(govars.BLACK, model, args)
+        elif isinstance(model1, str):
+            model = InferenceLocal(args, model1)
+            p1 = MCTSPlayer(govars.BLACK, model, args)
         if model2 is None:
-            p2 = RandomPlayer(govars.WHITE)
-        else:
+            model = InferenceRandom(args)
+            p2 = MCTSPlayer(govars.WHITE, model, args)
+        elif isinstance(model2, int):
             model = InferenceClient([model2])
+            p2 = MCTSPlayer(govars.WHITE, model, args)
+        elif isinstance(model2, str):
+            model = InferenceLocal(args, model2, model_path=model2)
             p2 = MCTSPlayer(govars.WHITE, model, args)
         done = False
         while not done:
@@ -72,6 +72,14 @@ def play_game(game_args):
         return order, 0
 
 
+def play_game_worker(game_args):
+    results = []
+    with ThreadPoolExecutor(max_workers=COMP_THREADS) as ex:
+        for r in ex.map(play_game, game_args):
+            results.append(r)
+    return results
+
+
 @dataclass
 class CompetitionResult:
     """Dataclass for holding competition results."""
@@ -79,7 +87,7 @@ class CompetitionResult:
     score: int  # sum of results (+ means model1 performed better)
     probs: Tuple[int]  # (m1 win%, m2 win%)
     games: np.ndarray  # [-1, 1, 1, -1, 0, ...] (+ means model1 win)
-    bw_wins: Tuple[int]  # (%black win, %white win) aggregate - just for analysis
+    wins_losses: Tuple[int]  # Raw counts of wins and losses for elo calculation
     raw_bw_games: np.ndarray
     raw_wb_games: np.ndarray
 
@@ -98,7 +106,12 @@ class ModelCompetition:
         self.komi = args.komi
         self.args = args
         self.pbar = tqdm(
-            total=1, unit="game", postfix={"score": 0.0}, smoothing=0.001, leave=False
+            total=1,
+            unit="game",
+            postfix={"score": 0.0},
+            smoothing=0.001,
+            leave=False,
+            position=1,
         )
         self.lock = Lock()
         self.n_workers = args.num_game_processes
@@ -156,21 +169,13 @@ class ModelCompetition:
             (np.count_nonzero(games == 1) / num_games),
             (np.count_nonzero(games == -1) / num_games),
         ]
-        bw_wins = [
-            (
-                np.count_nonzero(raw_bw_results == 1)
-                + np.count_nonzero(raw_wb_results == 1)
-            )
-            / num_games,
-            (
-                np.count_nonzero(raw_bw_results == -1)
-                + np.count_nonzero(raw_wb_results == -1)
-            )
-            / num_games,
+        wins_losses = [
+            np.count_nonzero(games == 1),
+            np.count_nonzero(games == -1),
         ]
 
         return CompetitionResult(
-            score, probs, games, bw_wins, raw_bw_results, raw_wb_results
+            score, probs, games, wins_losses, raw_bw_results, raw_wb_results
         )
 
 

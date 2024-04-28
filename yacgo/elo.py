@@ -6,6 +6,7 @@ can be found at https://github.com/lightvector/KataGo/blob/master/python/elo.py
 import copy
 import math
 import numpy as np
+import csv
 import os
 import scipy.stats
 import scipy.special
@@ -801,6 +802,45 @@ class GameResultSummary:
         """
         return self.results
 
+    def to_csv(self, file: str = "game_records.csv") -> None:
+        fieldnames = ["player2", "player1", "win", "loss", "draw", "player1_elo"]
+        _elos = self.get_elos(recompute=True)
+        with open(file, "w") as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+            for players, record in self.results.items():
+                player_1_elo = _elos.get_elo(players[0])
+                writer.writerow(
+                    {
+                        "player1": record.player1,
+                        "player2": record.player2,
+                        "win": record.win,
+                        "loss": record.loss,
+                        "draw": record.draw,
+                        "player1_elo": player_1_elo,
+                    }
+                )
+
+    @classmethod
+    def from_csv(cls, file: str = "game_records.csv") -> "GameResultSummary":
+        _sum = cls(
+            elo_prior_games=32.0,
+            estimate_first_player_advantage=False,
+            prior_player=("random", 0),
+        )
+        with open(file) as csvfile:
+            reader = csv.DictReader(csvfile)
+            for row in reader:
+                record = GameRecord(
+                    player1=row["player1"],
+                    player2=row["player2"],
+                    win=int(row["win"]),
+                    loss=int(row["loss"]),
+                    draw=int(row["draw"]),
+                )
+                _sum.add_game_record(record)
+        return _sum
+
     # Functions that can be implemented by subclasses -----------------------------------------------------
     # You can override these methods if you want add_games_from_file_or_dir to work.
     # Otherwise, you can just add game records yourself via add_game_record.
@@ -874,7 +914,11 @@ class GameResultSummary:
         )
         data = []
         if self.prior_player is not None:
-            data.extend(make_single_player_prior(self.prior_player[0], 1e10, self.prior_player[1]))
+            data.extend(
+                make_single_player_prior(
+                    self.prior_player[0], 1e10, self.prior_player[1]
+                )
+            )
         for pla_first in pla_names:
             for pla_second in pla_names:
                 if pla_first == pla_second:
@@ -912,7 +956,7 @@ class GameResultSummary:
                 )
             )
 
-        info = compute_elos(data, verbose=True)
+        info = compute_elos(data, verbose=False)
         return info
 
     def _print_matrix(self, pla_names, results_matrix):
@@ -1060,11 +1104,18 @@ if __name__ == "__main__":
 
     # Example 2
     summary = GameResultSummary(
-        elo_prior_games=1.0,
+        elo_prior_games=1000.0,
         estimate_first_player_advantage=False,
-        prior_player=("random", 0)
+        prior_player=("random", 0),
     )
 
-    summary.add_game_record(GameRecord("random", "model1", win=45, loss=55, draw=0))
+    summary.add_game_record(GameRecord("model1", "random", win=136, loss=64, draw=0))
     summary.add_game_record(GameRecord("model1", "model2", win=40, loss=55, draw=5))
-    summary.print_elos()
+    summary.add_game_record(GameRecord("random", "model2", win=32, loss=68, draw=0))
+    summary.add_game_record(GameRecord("model3", "model2", win=64, loss=36, draw=0))
+    summary.add_game_record(GameRecord("model3", "model1", win=60, loss=10, draw=0))
+    # summary.print_elos()
+    print("round 1")
+    elos = summary.get_elos()
+    print(elos)
+    print(elos.get_players()[0])

@@ -166,6 +166,18 @@ def make_args():
         ),
     )
     parser.add_argument(
+        "--game_records",
+        type=str,
+        default="game_records.csv",
+        help="File to store game records. Fails silently if does not exist",
+    )
+    parser.add_argument(
+        "--competition_epochs",
+        type=int,
+        default=5,
+        help="Number of epochs between competitions. Defaults to 5",
+    )
+    parser.add_argument(
         "--num_feature_channels",
         "-fc",
         type=int,
@@ -288,6 +300,11 @@ def make_args():
         "--num_games", type=int, default=8, help="Number of games to play"
     )
     parser.add_argument(
+        "--top_k",
+        type=int,
+        default=3,
+    )
+    parser.add_argument(
         "--num_game_processes",
         type=int,
         default=16,
@@ -298,7 +315,7 @@ def make_args():
     parser.add_argument(
         "--num_comp_games",
         type=int,
-        default=400,
+        default=32,
         help="Number of games to play for competition",
     )
     parser.add_argument(
@@ -308,10 +325,16 @@ def make_args():
         help="Komi for Go game. Defaults to 0.5 to avoid draws, giving white slight advantage",
     )
     parser.add_argument(
+        "--starting_elo",
+        type=float,
+        default=0.0,
+        help="Starting elo for model. Defaults to 0.0",
+    )
+    parser.add_argument(
         "--n_simulations",
         type=int,
-        default=400,
-        help="Number of simulations for MCTS for gameplay. Defaults to 400",
+        default=1200,
+        help="Number of simulations for MCTS for gameplay. Defaults to 1200",
     )
     parser.add_argument(
         "--pcap_train",
@@ -319,7 +342,7 @@ def make_args():
         default=None,
         help=(
             "Number of simulations for MCTS during data generation. defaults "
-            "to n_simulations (400) if not provided."
+            "to n_simulations (600) if not provided."
         ),
     )
     parser.add_argument(
@@ -440,4 +463,7 @@ def model_name_to_epoch(model: str) -> int:
     Returns:
         int: integer representation of the string number
     """
-    return int(model.split("-")[-1][:-4].lstrip("0"))
+    epoch_str = model.split("-")[-1][:-4].lstrip("0")
+    if epoch_str == "":
+        return 0
+    return int(epoch_str)

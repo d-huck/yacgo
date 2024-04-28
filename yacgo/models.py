@@ -8,23 +8,17 @@ import atexit
 import os
 import random
 import time
+from datetime import datetime as dt
 from typing import Tuple
 
 import numpy as np
 import torch
-from torchvision.transforms import RandomCrop
-import wandb
 import zmq
+from torchvision.transforms import RandomCrop, CenterCrop
 from tqdm.auto import tqdm
 
-from yacgo.data import (
-    DATA_DTYPE,
-    FULL_BOARD,
-    DataTrainClientMixin,
-    Inference,
-    State,
-    TrainState,
-)
+import wandb
+from yacgo.data import DATA_DTYPE, FULL_BOARD, DataTrainClientMixin, Inference, State
 from yacgo.go import game, govars
 from yacgo.vit import (
     EfficientFormer_depth,
@@ -81,11 +75,12 @@ class ViTWrapper(object):
             num_classes=FULL_BOARD**2 + 1,
         ).to(self.device)
         self.model_size = args.model_size
-        if model_path is not None:
+        if model_path is not None and model_path != "random":
             self.load_pretrained(model_path)
         elif args.model_path is not None:
             self.load_pretrained(args.model_path)
         self.board_size = FULL_BOARD
+        self.play_size = args.board_size
         self.n_chans = args.num_feature_channels
 
     def __repr__(self):
@@ -127,7 +122,7 @@ class ViTWrapper(object):
         if candidate:
             model_name = "candidate_model.pth"
         else:
-            model_name = f"{self.model_size}-bs{self.board_size}-nc{self.n_chans}-epoch-{epoch:03d}.pth"
+            model_name = f"{self.model_size}-bs{self.play_size}-nc{self.n_chans}-{dt.now().strftime('%d-%H%M%S')}-{epoch:03d}.pth"
         out = os.path.join(path, model_name)
         torch.save(self.model.state_dict(), out)
 
@@ -162,9 +157,16 @@ class InferenceLocal(ViTWrapper, Model):
     the bot or simple testing.
     """
 
-    def __init__(self, args: dict):
-        super().__init__(args)
+    def __init__(self, args: dict, model_path=None):
+        super().__init__(args, model_path=model_path)
         self.model.eval()
+        self.n_chans = args.num_feature_channels
+        self.board_size = args.board_size
+        self.transform = RandomCrop(FULL_BOARD, padding=0, pad_if_needed=True)
+
+    def to_full_board(self, state):
+        """Transforms a state to a full board state"""
+        return self.transform(torch.tensor(state)).numpy()
 
     def forward(self, inputs: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """Forward pass of the model
@@ -173,11 +175,19 @@ class InferenceLocal(ViTWrapper, Model):
             inputs (np.ndarray): state of single game
 
         """
-        inputs = torch.tensor(inputs).to(self.device)
-        inputs = inputs.unsqueeze(dim=0)  # pretend there is a batch of size 1
+        inputs = torch.tensor(inputs).unsqueeze(dim=0).numpy()
+        # print(inputs.shape)
+        transformed = self.to_full_board(inputs)
+        # print(transformed.shape)
+        inputs = torch.tensor(transformed).to(self.device)
+        # transformed = transformed.unsqueeze(dim=0)  # pretend there is a batch of size 1
         value, policy = self.model.forward(inputs)
         value = value.detach().cpu().numpy().squeeze()
         policy = policy.detach().cpu().numpy().squeeze()
+        # print(value.shape, policy.shape)
+        board_mask = np.append(transformed.squeeze()[govars.BOARD_MASK].ravel(), 1)
+        policy = policy[board_mask == 1]  # only take the valid moves
+        # policy = np.exp(policy) / sum(np.exp(policy))  # softmax
         return value, policy
 
 
@@ -304,8 +314,8 @@ class InferenceServer(ViTWrapper):
             (
                 self.batch_size,
                 self.n_chans,
-                self.board_size,
-                self.board_size,
+                FULL_BOARD,
+                FULL_BOARD,
             )
         )
 
