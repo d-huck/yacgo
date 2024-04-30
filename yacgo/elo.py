@@ -1,6 +1,9 @@
 """
-This file taken from the KataGo python library without modification. Original source
+This file taken from the KataGo python library. Original source
 can be found at https://github.com/lightvector/KataGo/blob/master/python/elo.py
+
+Some modification to allow dumping information to CSV as well as report SD was
+added.
 """
 
 import copy
@@ -713,7 +716,7 @@ class GameResultSummary:
         pla_names = set(
             itertools.chain(*(name_pair for name_pair in self.results.keys()))
         )
-        self._print_result_matrix(pla_names)
+        return self._print_result_matrix(pla_names)
 
     def print_elos(self):
         """Print game results and maximum likelihood posterior Elos."""
@@ -803,13 +806,22 @@ class GameResultSummary:
         return self.results
 
     def to_csv(self, file: str = "game_records.csv") -> None:
-        fieldnames = ["player2", "player1", "win", "loss", "draw", "player1_elo"]
+        fieldnames = [
+            "player1",
+            "player2",
+            "win",
+            "loss",
+            "draw",
+            "player1_elo",
+            "player1_elo_std",
+        ]
         _elos = self.get_elos(recompute=True)
         with open(file, "w") as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
             for players, record in self.results.items():
                 player_1_elo = _elos.get_elo(players[0])
+                player_1_std = _elos.get_approx_elo_stderr(players[0])
                 writer.writerow(
                     {
                         "player1": record.player1,
@@ -818,6 +830,7 @@ class GameResultSummary:
                         "loss": record.loss,
                         "draw": record.draw,
                         "player1_elo": player_1_elo,
+                        "player1_elo_std": player_1_std,
                     }
                 )
 
@@ -1047,11 +1060,14 @@ class GameResultSummary:
 
         print("Win% by row player against column player:")
         result_matrix = []
+        out = []
         for pla1 in pla_names:
             row = []
+            flt_row = []
             for pla2 in pla_names:
                 if pla1 == pla2:
                     row.append("-")
+                    flt_row.append(0)
                     continue
                 else:
                     pla1_pla2 = (
@@ -1079,11 +1095,15 @@ class GameResultSummary:
                     )
                     if total <= 0:
                         row.append("-")
+                        flt_row.append(0)
                     else:
                         row.append(f"{win/total*100.0:.1f}%")
+                        flt_row.append(win / total)
             result_matrix.append(row)
+            out.append(flt_row)
 
         self._print_matrix(pla_names, result_matrix)
+        return out
 
 
 # Testing code
