@@ -1,22 +1,24 @@
+"""
+Code for managing Go state in between moves.
+
+Original Code found at https://github.com/huangeddie/GymGo/tree/master
+"""
+
 import numpy as np
 from scipy import ndimage
 from scipy.ndimage import measurements
 
 from yacgo.go import govars
 
-group_struct = np.array([[[0, 0, 0],
-                          [0, 0, 0],
-                          [0, 0, 0]],
-                         [[0, 1, 0],
-                          [1, 1, 1],
-                          [0, 1, 0]],
-                         [[0, 0, 0],
-                          [0, 0, 0],
-                          [0, 0, 0]]])
+group_struct = np.array(
+    [
+        [[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+        [[0, 1, 0], [1, 1, 1], [0, 1, 0]],
+        [[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+    ]
+)
 
-surround_struct = np.array([[0, 1, 0],
-                            [1, 0, 1],
-                            [0, 1, 0]])
+surround_struct = np.array([[0, 1, 0], [1, 0, 1], [0, 1, 0]])
 
 neighbor_deltas = np.array([[-1, 0], [1, 0], [0, -1], [0, 1]])
 
@@ -58,8 +60,12 @@ def compute_invalid_moves(state, player, ko_protect=None):
         expanded_opp_groups[i] = all_opp_groups == (i + 1)
 
     # Get all liberties in the expanded form
-    all_own_liberties = empties[np.newaxis] * ndimage.binary_dilation(expanded_own_groups, surround_struct[np.newaxis])
-    all_opp_liberties = empties[np.newaxis] * ndimage.binary_dilation(expanded_opp_groups, surround_struct[np.newaxis])
+    all_own_liberties = empties[np.newaxis] * ndimage.binary_dilation(
+        expanded_own_groups, surround_struct[np.newaxis]
+    )
+    all_opp_liberties = empties[np.newaxis] * ndimage.binary_dilation(
+        expanded_opp_groups, surround_struct[np.newaxis]
+    )
 
     own_liberty_counts = np.sum(all_own_liberties, axis=(1, 2))
     opp_liberty_counts = np.sum(all_opp_liberties, axis=(1, 2))
@@ -74,8 +80,12 @@ def compute_invalid_moves(state, player, ko_protect=None):
     definite_valids_array += np.sum(all_opp_liberties[opp_liberty_counts > 1], axis=0)
 
     # All invalid moves are occupied spaces + (possible invalids minus the definite valids and it's surrounded)
-    surrounded = ndimage.convolve(all_pieces, surround_struct, mode='constant', cval=1) == 4
-    invalid_moves = all_pieces + possible_invalid_array * (definite_valids_array == 0) * surrounded
+    surrounded = (
+        ndimage.convolve(all_pieces, surround_struct, mode="constant", cval=1) == 4
+    )
+    invalid_moves = (
+        all_pieces + possible_invalid_array * (definite_valids_array == 0) * surrounded
+    )
 
     # Ko-protection
     if ko_protect is not None:
@@ -104,14 +114,24 @@ def batch_compute_invalid_moves(batch_state, batch_player, batch_ko_protect):
     batch_empties = 1 - batch_all_pieces
 
     # Setup invalid and valid arrays
-    batch_possible_invalid_array = np.zeros(batch_state.shape[:1] + batch_state.shape[2:])
-    batch_definite_valids_array = np.zeros(batch_state.shape[:1] + batch_state.shape[2:])
+    batch_possible_invalid_array = np.zeros(
+        batch_state.shape[:1] + batch_state.shape[2:]
+    )
+    batch_definite_valids_array = np.zeros(
+        batch_state.shape[:1] + batch_state.shape[2:]
+    )
 
     # Get all groups
-    batch_all_own_groups, _ = measurements.label(batch_state[batch_idcs, batch_player], group_struct)
-    batch_all_opp_groups, _ = measurements.label(batch_state[batch_idcs, 1 - batch_player], group_struct)
+    batch_all_own_groups, _ = measurements.label(
+        batch_state[batch_idcs, batch_player], group_struct
+    )
+    batch_all_opp_groups, _ = measurements.label(
+        batch_state[batch_idcs, 1 - batch_player], group_struct
+    )
 
-    batch_data = enumerate(zip(batch_all_own_groups, batch_all_opp_groups, batch_empties))
+    batch_data = enumerate(
+        zip(batch_all_own_groups, batch_all_opp_groups, batch_empties)
+    )
     for i, (all_own_groups, all_opp_groups, empties) in batch_data:
         own_labels = np.unique(all_own_groups)
         opp_labels = np.unique(all_opp_groups)
@@ -128,10 +148,12 @@ def batch_compute_invalid_moves(batch_state, batch_player, batch_ko_protect):
             expanded_opp_groups[j] = all_opp_groups == label
 
         # Get all liberties in the expanded form
-        all_own_liberties = empties[np.newaxis] * ndimage.binary_dilation(expanded_own_groups,
-                                                                          surround_struct[np.newaxis])
-        all_opp_liberties = empties[np.newaxis] * ndimage.binary_dilation(expanded_opp_groups,
-                                                                          surround_struct[np.newaxis])
+        all_own_liberties = empties[np.newaxis] * ndimage.binary_dilation(
+            expanded_own_groups, surround_struct[np.newaxis]
+        )
+        all_opp_liberties = empties[np.newaxis] * ndimage.binary_dilation(
+            expanded_opp_groups, surround_struct[np.newaxis]
+        )
 
         own_liberty_counts = np.sum(all_own_liberties, axis=(1, 2))
         opp_liberty_counts = np.sum(all_opp_liberties, axis=(1, 2))
@@ -139,15 +161,31 @@ def batch_compute_invalid_moves(batch_state, batch_player, batch_ko_protect):
         # Possible invalids are on single liberties of opponent groups and on multi-liberties of own groups
         # Definite valids are on single liberties of own groups, multi-liberties of opponent groups
         # or you are not surrounded
-        batch_possible_invalid_array[i] += np.sum(all_own_liberties[own_liberty_counts > 1], axis=0)
-        batch_possible_invalid_array[i] += np.sum(all_opp_liberties[opp_liberty_counts == 1], axis=0)
+        batch_possible_invalid_array[i] += np.sum(
+            all_own_liberties[own_liberty_counts > 1], axis=0
+        )
+        batch_possible_invalid_array[i] += np.sum(
+            all_opp_liberties[opp_liberty_counts == 1], axis=0
+        )
 
-        batch_definite_valids_array[i] += np.sum(all_own_liberties[own_liberty_counts == 1], axis=0)
-        batch_definite_valids_array[i] += np.sum(all_opp_liberties[opp_liberty_counts > 1], axis=0)
+        batch_definite_valids_array[i] += np.sum(
+            all_own_liberties[own_liberty_counts == 1], axis=0
+        )
+        batch_definite_valids_array[i] += np.sum(
+            all_opp_liberties[opp_liberty_counts > 1], axis=0
+        )
 
     # All invalid moves are occupied spaces + (possible invalids minus the definite valids and it's surrounded)
-    surrounded = ndimage.convolve(batch_all_pieces, surround_struct[np.newaxis], mode='constant', cval=1) == 4
-    invalid_moves = batch_all_pieces + batch_possible_invalid_array * (batch_definite_valids_array == 0) * surrounded
+    surrounded = (
+        ndimage.convolve(
+            batch_all_pieces, surround_struct[np.newaxis], mode="constant", cval=1
+        )
+        == 4
+    )
+    invalid_moves = (
+        batch_all_pieces
+        + batch_possible_invalid_array * (batch_definite_valids_array == 0) * surrounded
+    )
 
     # Ko-protection
     for i, ko_protect in enumerate(batch_ko_protect):
@@ -187,10 +225,19 @@ def batch_update_pieces(batch_non_pass, batch_state, batch_adj_locs, batch_playe
     batch_all_pieces = np.sum(batch_state[:, [govars.BLACK, govars.WHITE]], axis=1)
     batch_empties = 1 - batch_all_pieces
 
-    batch_all_opp_groups, _ = ndimage.measurements.label(batch_state[batch_non_pass, batch_opponent],
-                                                         group_struct)
+    batch_all_opp_groups, _ = ndimage.measurements.label(
+        batch_state[batch_non_pass, batch_opponent], group_struct
+    )
 
-    batch_data = enumerate(zip(batch_all_opp_groups, batch_all_pieces, batch_empties, batch_adj_locs, batch_opponent))
+    batch_data = enumerate(
+        zip(
+            batch_all_opp_groups,
+            batch_all_pieces,
+            batch_empties,
+            batch_adj_locs,
+            batch_opponent,
+        )
+    )
     for i, (all_opp_groups, all_pieces, empties, adj_locs, opponent) in batch_data:
         killed_groups = []
 
@@ -203,7 +250,12 @@ def batch_update_pieces(batch_non_pass, batch_state, batch_adj_locs, batch_playe
             if np.sum(liberties) <= 0:
                 # Killed group
                 opp_group_locs = np.argwhere(opp_group)
-                batch_state[batch_non_pass[i], opponent, opp_group_locs[:, 0], opp_group_locs[:, 1]] = 0
+                batch_state[
+                    batch_non_pass[i],
+                    opponent,
+                    opp_group_locs[:, 0],
+                    opp_group_locs[:, 1],
+                ] = 0
                 killed_groups.append(opp_group_locs)
 
         batch_killed_groups.append(killed_groups)

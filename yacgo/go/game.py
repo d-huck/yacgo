@@ -14,6 +14,10 @@ The state of the game is a numpy array
 7 - Previous Action 2
 ...
 10 - Previous Action 5
+11 - Board Mask 
+
+
+Original Code found at https://github.com/huangeddie/GymGo/tree/master
 """
 
 # pylint: disable=missing-function-docstring,missing-class-docstring
